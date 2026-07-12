@@ -1,0 +1,9 @@
+ultralytics>=8.0.0
+opencv-python-headless>=4.10.0
+xgboost>=2.1.0
+pandas>=2.2.0
+scikit-learn>=1.5.0
+matplotlib>=3.8.0
+onnxruntime>=1.19.0
+optuna>=3.6.0
+lightgbm>=4.3.0

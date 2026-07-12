@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WagaSwin — Estymacja wagi</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; min-height: 100vh; }
+
+  .header { background: #16213e; padding: 16px 24px; border-bottom: 2px solid #0f3460; display: flex; align-items: center; gap: 16px; }
+  .header h1 { font-size: 22px; color: #e94560; }
+  .header span { color: #888; font-size: 14px; }
+
+  .main { display: flex; gap: 20px; padding: 20px; max-width: 1400px; margin: 0 auto; }
+  .left { flex: 1; min-width: 0; }
+  .right { width: 340px; flex-shrink: 0; }
+
+  .drop-zone {
+    border: 3px dashed #0f3460; border-radius: 12px; padding: 40px; text-align: center;
+    cursor: pointer; transition: all 0.2s; min-height: 200px; display: flex;
+    flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+    background: #16213e;
+  }
+  .drop-zone:hover, .drop-zone.drag-over { border-color: #e94560; background: #1a1a3e; }
+  .drop-zone .icon { font-size: 48px; }
+  .drop-zone p { color: #aaa; }
+  .drop-zone input { display: none; }
+
+  .result-img { width: 100%; border-radius: 8px; margin-top: 16px; display: none; }
+  .result-img.visible { display: block; }
+
+  .panel { background: #16213e; border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  .panel h3 { color: #e94560; margin-bottom: 12px; font-size: 15px; }
+
+  .pig-card {
+    background: #1a1a2e; border-radius: 8px; padding: 12px; margin-bottom: 10px;
+    border-left: 4px solid #0f3460;
+  }
+  .pig-card .weight { font-size: 28px; font-weight: bold; color: #0fff50; }
+  .pig-card .dims { color: #aaa; font-size: 13px; margin-top: 4px; }
+
+  .calib-info { font-size: 13px; color: #888; line-height: 1.8; }
+  .calib-info b { color: #ccc; }
+
+  .btn {
+    display: inline-block; padding: 8px 18px; border: none; border-radius: 6px;
+    cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.15s;
+  }
+  .btn-primary { background: #e94560; color: #fff; }
+  .btn-primary:hover { background: #c73e54; }
+  .btn-sm { padding: 5px 12px; font-size: 12px; }
+
+  .method-btns { display: flex; gap: 6px; margin-top: 8px; }
+  .method-btns .btn {
+    flex: 1; text-align: center; background: #1a1a2e; color: #aaa; border: 1px solid #333;
+  }
+  .method-btns .btn.active { background: #0f3460; color: #fff; border-color: #e94560; }
+
+  .calibrate-section { margin-top: 12px; }
+  .calibrate-section input {
+    width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #333;
+    background: #1a1a2e; color: #eee; font-size: 14px; margin: 6px 0;
+  }
+
+  .spinner { display: none; margin: 20px auto; }
+  .spinner.visible { display: block; }
+  .spinner::after {
+    content: ''; display: block; width: 40px; height: 40px; margin: 0 auto;
+    border: 4px solid #333; border-top-color: #e94560; border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .empty { text-align: center; color: #666; padding: 20px; }
+
+  @media (max-width: 800px) {
+    .main { flex-direction: column; }
+    .right { width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>WagaSwin</h1>
+  <span>Estymacja wagi swin z kamery OAK-D S2</span>
+</div>
+
+<div class="main">
+  <div class="left">
+    <div class="drop-zone" id="dropZone">
+      <div class="icon">📷</div>
+      <p><b>Przeciagnij zdjecie</b> lub kliknij aby wybrac</p>
+      <p style="font-size:12px">Zdjecie z gory (kamera OAK-D)</p>
+      <input type="file" id="fileInput" accept="image/*">
+    </div>
+    <div class="spinner" id="spinner"></div>
+    <img class="result-img" id="resultImg">
+  </div>
+
+  <div class="right">
+    <div class="panel">
+      <h3>Wynik</h3>
+      <div id="pigResult"><p class="empty">Wgraj zdjecie aby rozpoczac</p></div>
+    </div>
+
+    <div class="panel">
+      <h3>Metoda obliczen</h3>
+      <div class="method-btns" id="methodBtns">
+        <button class="btn active" data-m="area">Pole pow.</button>
+        <button class="btn" data-m="volume">L x W&sup2;</button>
+        <button class="btn" data-m="combined">Srednia</button>
+      </div>
+      <p style="font-size:11px;color:#666;margin-top:8px">
+        <b>Pole pow.</b> — waga = C &times; area<br>
+        <b>L&times;W&sup2;</b> — waga = C &times; L &times; W&sup2; (przyblizenie objetosci)<br>
+        <b>Srednia</b> — srednia obu metod
+      </p>
+    </div>
+
+    <div class="panel">
+      <h3>Kalibracja wagi</h3>
+      <p style="font-size:12px;color:#888;margin-bottom:8px">Podaj znana wage swini #1 aby skalibrowaC wspolczynnik</p>
+      <div class="calibrate-section">
+        <input type="number" id="knownWeight" placeholder="Waga swini #1 [kg]" min="5" max="500" step="0.5">
+        <button class="btn btn-primary" id="calibBtn" style="width:100%">Kalibruj wspolczynnik</button>
+      </div>
+      <div id="calibResult" style="margin-top:8px;font-size:12px;color:#0fff50"></div>
+    </div>
+
+    <div class="panel">
+      <h3>Kalibracja kamery</h3>
+      <div class="calib-info" id="calibInfo"><p class="empty">—</p></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+const resultImg = document.getElementById('resultImg');
+const spinner = document.getElementById('spinner');
+const pigResult = document.getElementById('pigResult');
+const calibInfo = document.getElementById('calibInfo');
+const calibBtn = document.getElementById('calibBtn');
+const calibResult = document.getElementById('calibResult');
+const methodBtns = document.getElementById('methodBtns');
+
+let lastFile = null;
+let currentMethod = 'area';
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', () => { if (fileInput.files.length) handleFile(fileInput.files[0]); });
+
+document.addEventListener('paste', e => {
+  const items = e.clipboardData?.items;
+  if (!items) return;
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      handleFile(item.getAsFile());
+      return;
+    }
+  }
+});
+
+methodBtns.querySelectorAll('.btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    methodBtns.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentMethod = btn.dataset.m;
+    const fd = new FormData();
+    fd.append('method', currentMethod);
+    await fetch('/set_method', { method: 'POST', body: fd });
+    if (lastFile) handleFile(lastFile);
+  });
+});
+
+calibBtn.addEventListener('click', async () => {
+  const w = parseFloat(document.getElementById('knownWeight').value);
+  if (!w || w < 5 || w > 500) { calibResult.textContent = 'Podaj wage 5-500 kg'; return; }
+  if (!lastFile) { calibResult.textContent = 'Najpierw wgraj zdjecie'; return; }
+  const fd = new FormData();
+  fd.append('image', lastFile);
+  fd.append('known_weight', w);
+  fd.append('pig_index', 0);
+  const res = await fetch('/calibrate_weight', { method: 'POST', body: fd });
+  const data = await res.json();
+  if (data.error) { calibResult.textContent = data.error; return; }
+  calibResult.innerHTML = `Skalibrowano!<br>coeff_area=${data.coeff_area}<br>coeff_volume=${data.coeff_volume}`;
+  handleFile(lastFile);
+});
+
+async function handleFile(file) {
+  lastFile = file;
+  spinner.classList.add('visible');
+  resultImg.classList.remove('visible');
+  pigResult.innerHTML = '<p class="empty">Analizuje...</p>';
+
+  const fd = new FormData();
+  fd.append('image', file);
+  try {
+    const res = await fetch('/analyze', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (data.error) { pigResult.innerHTML = `<p class="empty">${data.error}</p>`; return; }
+
+    resultImg.src = 'data:image/jpeg;base64,' + data.image;
+    resultImg.classList.add('visible');
+    dropZone.style.display = 'none';
+
+    const p = data.pig;
+    if (!p) {
+      pigResult.innerHTML = '<p class="empty">Nie wykryto swini</p>';
+    } else {
+      pigResult.innerHTML = `
+        <div class="pig-card">
+          <div class="weight">${p.weight_kg} kg</div>
+          <div class="dims">
+            Dlugosc: ${p.length_cm} cm &nbsp;|&nbsp;
+            Szerokosc: ${p.width_cm} cm &nbsp;|&nbsp;
+            Pole: ${p.area_cm2} cm&sup2;
+          </div>
+        </div>
+      `;
+    }
+
+    const c = data.calibration;
+    calibInfo.innerHTML = `
+      <b>Wysokosc kamery:</b> ${c.height_cm} cm<br>
+      <b>Skala:</b> ${c.scale_cm_per_px} cm/px (${c.px_per_cm} px/cm)<br>
+      <b>FOV:</b> ${c.fov}<br>
+      <b>Metoda:</b> ${data.coeffs.method}<br>
+      <b>Coeff area:</b> ${data.coeffs.coeff_area}<br>
+      <b>Coeff volume:</b> ${data.coeffs.coeff_volume}
+    `;
+  } catch (err) {
+    pigResult.innerHTML = `<p class="empty">Blad: ${err.message}</p>`;
+  } finally {
+    spinner.classList.remove('visible');
+  }
+}
+
+resultImg.addEventListener('click', () => {
+  dropZone.style.display = '';
+  resultImg.classList.remove('visible');
+});
+</script>
+</body>
+</html>

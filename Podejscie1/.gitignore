@@ -1,0 +1,22 @@
+
+/venv
+
+# Eksport z Roboflow (duży zbiór obrazów + etykiet — trzymaj lokalnie)
+/roboflow/train/
+/roboflow/valid/
+/roboflow/test/
+
+# Wygenerowany dataset i wagi YOLO
+/training/datasets/pig_top/images/
+/training/datasets/pig_top/labels/
+/training/datasets/PigRGB-Weight/
+/training/runs/
+*.pt
+*.onnx
+
+# Nagrania OAK-D (RGB + depth) — duże pliki, trzymaj lokalnie / Google Drive
+/dataset/pig_*/depth_frames.npy
+/dataset/pig_*/rgb_video.mp4
+/dataset
+# macOS
+.DS_Store

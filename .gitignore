@@ -1,0 +1,60 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# ML — modele i artefakty treningu (trzymaj lokalnie)
+*.pt
+*.onnx
+**/training/runs/
+**/training/datasets/**/images/
+**/training/datasets/**/labels/
+**/training/datasets/PigRGB-Weight/
+**/models/*.pt
+**/models/*.onnx
+
+# Roboflow — duże eksporty obrazów i etykiet
+**/roboflow/train/
+**/roboflow/valid/
+**/roboflow/test/
+**/Roboflow-nowe/
+
+# Dataset YOLO / obrazy treningowe (Podejscie3 i duplikaty)
+**/datasets/
+
+# Nagrania OAK-D i dataset (duże pliki — lokalnie / Drive)
+**/dataset/
+**/training/datasets/
+**/*.npy
+**/*.mp4
+**/*.avi
+**/*.mov
+
+# Cursor / Claude
+.claude/
+**/.cache/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.suo
+*.sln
+
+# Logi i sekrety
+*.log
+.env
+.env.*
+!.env.example

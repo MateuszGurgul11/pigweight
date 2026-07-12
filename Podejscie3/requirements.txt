@@ -1,0 +1,23 @@
+# Podejscie3 — estymacja wagi świni (YOLO-seg + FastAPI)
+# Instalacja:
+#   python -m venv .venv
+#   .venv\Scripts\pip install -r requirements.txt
+#
+# Uruchomienie API:
+#   .venv\Scripts\python -m uvicorn app:app --reload --port 8001
+
+# --- Web API (app.py) ---
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.12
+pydantic>=2.9.0
+
+# --- Obrazowanie i pomiary (app.py, detector.py, test.py) ---
+numpy>=1.26.0,<3.0
+opencv-python>=4.10.0
+
+# --- Segmentacja YOLOv8 (detector.py; trening: yolo train ... wg PLAN.md) ---
+ultralytics>=8.4.0
+
+# --- Kamera OAK / Luxonis DepthAI (lokalny .venv; planowany live.py) ---
+depthai>=3.7.0
