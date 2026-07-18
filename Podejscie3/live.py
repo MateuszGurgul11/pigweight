@@ -5,10 +5,12 @@ Dwa zrodla obrazu:
     python live.py rgb_video.mp4   -> plik wideo (tylko RGB, do testow)
 
 Sekwencja wazenia (identyczna dla obu zrodel):
-    S — start: kalibracja skali -> pomiar przez MEASURE_DURATION_S sekund
-        -> podsumowanie (srednia + mediana). Kolejne S zaczyna od nowa.
+    S / przycisk (GPIO 17, pin 11) — start: kalibracja skali -> pomiar
+        przez MEASURE_DURATION_S sekund -> podsumowanie. Kolejne S/przycisk
+        zaczyna od nowa.
     Q — wyjscie
-W przyszlosci klawisz S zastapi fizyczny przycisk.
+
+Przycisk: GPIO 17 <-> przycisk <-> GND (wewnetrzny pull-up, aktywny LOW).
 
 Kalibracja skali odbywa sie na poczatku kazdej sekwencji (nie ciagle):
 podloga = najdalsza plaszczyzna w kadrze, wiec pomiar dziala nawet gdy
@@ -55,6 +57,55 @@ STATE_MEASURING = "measuring"
 STATE_RESULT = "result"
 
 WINDOW = "WagaSwin [YOLO]"
+
+# Fizyczny przycisk startu — BCM GPIO 17 = pin fizyczny 11
+BUTTON_PIN_NAME = "D17"
+BUTTON_DEBOUNCE_S = 0.05
+
+
+class StartButton:
+    """Przycisk startu na GPIO (pull-up, aktywny LOW). Bez Blinka = martwy obiekt."""
+
+    def __init__(self) -> None:
+        self._pin = None
+        self._prev_high = True
+        self._last_fire = 0.0
+        try:
+            import board
+            import digitalio
+
+            pin = getattr(board, BUTTON_PIN_NAME)
+            dio = digitalio.DigitalInOut(pin)
+            dio.direction = digitalio.Direction.INPUT
+            dio.pull = digitalio.Pull.UP
+            self._pin = dio
+            self._prev_high = bool(dio.value)
+            print(f">>> Przycisk: GPIO {BUTTON_PIN_NAME} (pin 11) gotowy")
+        except Exception as e:  # noqa: BLE001 — laptop / brak Blinka
+            print(f">>> Przycisk: niedostepny ({type(e).__name__}: {e}) — tylko klawisz S")
+
+    def pressed(self) -> bool:
+        """True raz na zbocze opadajace (naciśnięcie), z debounce."""
+        if self._pin is None:
+            return False
+        high = bool(self._pin.value)
+        falling = self._prev_high and not high
+        self._prev_high = high
+        if not falling:
+            return False
+        now = time.monotonic()
+        if now - self._last_fire < BUTTON_DEBOUNCE_S:
+            return False
+        self._last_fire = now
+        return True
+
+    def close(self) -> None:
+        if self._pin is not None:
+            try:
+                self._pin.deinit()
+            except Exception:  # noqa: BLE001
+                pass
+            self._pin = None
 
 
 def load_calibration() -> dict:
@@ -248,7 +299,7 @@ class WeighingSession:
                 print(f"  Std:      {r['std']:.1f} kg")
                 print(f"  Skala:    {self.calib_msg}")
                 print("=" * 50)
-                print("Nacisnij S aby zwazyc ponownie.\n")
+                print("Nacisnij S / przycisk aby zwazyc ponownie.\n")
 
         detecting = self.state in (STATE_CALIBRATING, STATE_MEASURING)
 
@@ -289,7 +340,7 @@ class WeighingSession:
 
         # Status sekwencji na ekranie
         if self.state == STATE_IDLE:
-            draw_status(frame, ["Nacisnij S aby rozpoczac wazenie"], (255, 255, 255))
+            draw_status(frame, ["Nacisnij S / przycisk aby rozpoczac"], (255, 255, 255))
         elif self.state == STATE_CALIBRATING:
             remaining = max(0.0, CALIBRATE_DURATION_S - elapsed)
             lines = [f"KALIBRACJA SKALI... {remaining:.1f} s"]
@@ -308,14 +359,14 @@ class WeighingSession:
             if self.result is None:
                 draw_status(frame, [
                     "BRAK POMIAROW — nie wykryto swini",
-                    "Nacisnij S aby sprobowac ponownie",
+                    "Nacisnij S / przycisk ponownie",
                 ], (0, 0, 255))
             else:
                 r = self.result
                 draw_status(frame, [
                     f"WYNIK: srednia {r['mean']:.1f} kg | mediana {r['median']:.1f} kg",
                     f"Min/Max: {r['min']:.1f} / {r['max']:.1f} kg  ({r['n']} pomiarow)",
-                    "Nacisnij S aby zwazyc ponownie",
+                    "Nacisnij S / przycisk aby zwazyc ponownie",
                 ], (0, 255, 255))
 
         # Lustrzane odbicie statusu na ekranie ILI9341 (jesli podlaczony)
@@ -345,9 +396,10 @@ def run_camera() -> None:
     fx = float(device.readCalibration().getCameraIntrinsics(dai.CameraBoardSocket.CAM_A, RGB_W, RGB_H)[0][0])
 
     session = WeighingSession(fx=fx, display=init_display())
+    btn = StartButton()
     print(f"Zrodlo: kamera OAK-D S2 | podloga={session.cal['height_cm']}cm, skala={session.scale:.6f} cm/px | fx={fx:.1f}px | metoda={session.coeffs['method']}")
     print(f"Czas pomiaru: {MEASURE_DURATION_S:.0f} s (+ {CALIBRATE_DURATION_S:.0f} s kalibracji skali)")
-    print("Uruchomiono kamere [YOLO-seg]. S — start wazenia, Q — wyjscie\n")
+    print("Uruchomiono kamere [YOLO-seg]. S / przycisk — start wazenia, Q — wyjscie\n")
 
     try:
         with pipeline:
@@ -355,7 +407,7 @@ def run_camera() -> None:
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord("q"):
                     break
-                elif key == ord("s"):
+                if key == ord("s") or btn.pressed():
                     session.start()
 
                 video_in = video_queue.tryGet()
@@ -374,6 +426,7 @@ def run_camera() -> None:
                 session.update(frame, depth_frame)
                 cv2.imshow(WINDOW, frame)
     finally:
+        btn.close()
         cv2.destroyAllWindows()
 
 
@@ -396,9 +449,10 @@ def run_video(path: str) -> None:
     delay = max(1, int(1000 / fps))
 
     session = WeighingSession(fx=None, display=init_display())  # brak glebi -> zapisana skala
+    btn = StartButton()
     print(f"Zrodlo: wideo {video_path.name} ({total} klatek, {fps:.0f} FPS) | skala={session.scale:.6f} cm/px | metoda={session.coeffs['method']}")
     print(f"Czas pomiaru: {MEASURE_DURATION_S:.0f} s (+ {CALIBRATE_DURATION_S:.0f} s stabilizacji)")
-    print("Wideo zapetla sie. S — start wazenia, Q — wyjscie\n")
+    print("Wideo zapetla sie. S / przycisk — start wazenia, Q — wyjscie\n")
 
     cv2.namedWindow(WINDOW, cv2.WINDOW_NORMAL)
     cv2.resizeWindow(WINDOW, 1280, 720)
@@ -408,7 +462,7 @@ def run_video(path: str) -> None:
             key = cv2.waitKey(delay) & 0xFF
             if key == ord("q"):
                 break
-            elif key == ord("s"):
+            if key == ord("s") or btn.pressed():
                 session.start()
 
             ret, frame = cap.read()
@@ -419,6 +473,7 @@ def run_video(path: str) -> None:
             session.update(frame, depth_frame=None)
             cv2.imshow(WINDOW, frame)
     finally:
+        btn.close()
         cap.release()
         cv2.destroyAllWindows()
 
