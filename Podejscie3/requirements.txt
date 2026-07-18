@@ -21,3 +21,10 @@ ultralytics>=8.4.0
 
 # --- Kamera OAK / Luxonis DepthAI (lokalny .venv; planowany live.py) ---
 depthai>=3.7.0
+
+# --- Wyswietlacz ILI9341 na Raspberry Pi 5 (display.py, hello_screen.py) ---
+# Tylko na Pi — na innych platformach import 'board' sie nie powiedzie
+# i program dziala bez ekranu (init_display() zwraca None).
+adafruit-circuitpython-rgb-display>=3.11.0
+adafruit-blinka>=8.0.0
+pillow>=10.0.0
