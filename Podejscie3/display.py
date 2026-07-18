@@ -6,6 +6,10 @@ wysokosc pomiaru (podloga z kalibracji).
 Pi 5 ma nowy kontroler GPIO (RP1), wiec uzywamy Adafruit Blinka +
 adafruit-circuitpython-rgb-display (chodzi przez lgpio).
 
+Pi 5 + CS na CE0 (pin 24): zeby uniknac lgpio.error: 'GPIO busy',
+dodaj do /boot/firmware/config.txt linie `dtoverlay=spi0-0cs` i zrebootuj.
+Bez tego kernel trzyma CE0 jako spi0 CS0 i DigitalInOut(board.CE0) pada.
+
 Test okablowania (bez reszty programu):
     python display.py
 

@@ -8,6 +8,15 @@ czy okablowanie i SPI dzialaja.
 Wymaga (na Pi):
     pip install adafruit-circuitpython-rgb-display adafruit-blinka pillow
     oraz wlaczonego SPI (sudo raspi-config -> Interface Options -> SPI).
+
+Pi 5 + CS na CE0 (pin 24): kernel zajmuje CE0 jako spi0 CS0, wiec
+DigitalInOut(board.CE0) rzuca lgpio.error: 'GPIO busy'. Zwolnij CE0/CE1
+ze sterownika SPI (SPI zostaje aktywne), dodajac do /boot/firmware/config.txt:
+
+    dtoverlay=spi0-0cs
+
+Potem reboot. Alternatywa: skrypt Adafruit raspi-spi-reassign.py
+z --ce0=disabled --ce1=disabled.
 """
 import board
 import digitalio
