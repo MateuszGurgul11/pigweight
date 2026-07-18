@@ -1,21 +1,22 @@
 [Unit]
 Description=PigWeight live.py — waga swin (OAK-D + ILI9341)
-After=network-online.target multi-user.target
+# Czekaj na pulpit — OpenCV/DISPLAY i czesto USB potrzebuja sesji graficznej
+After=graphical.target network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-# User= ustawiane przez install_autostart.sh
+# User= / Group= / sciezki wstawia install_autostart.sh
 WorkingDirectory=/REPLACE_ROOT
 Environment=PIGWEIGHT_BOOT_DELAY=1
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=/REPLACE_HOME/.Xauthority
-ExecStart=/REPLACE_ROOT/start_live.sh
+Environment=HOME=/REPLACE_HOME
+ExecStart=/bin/bash /REPLACE_ROOT/start_live.sh
 Restart=on-failure
-RestartSec=10
-# OpenCV / kamera moga potrzebowac sesji graficznej
+RestartSec=15
 StandardOutput=journal
 StandardError=journal
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=graphical.target

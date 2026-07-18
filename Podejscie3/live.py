@@ -12,6 +12,11 @@ Sekwencja wazenia (identyczna dla obu zrodel):
 
 Przycisk: GPIO 3 (pin 5) <-> przycisk <-> GND (pin 9); pull-up, aktywny LOW.
 
+OAK-D / DepthAI: jesli lsusb widzi Movidius (03e7), a live.py rzuca
+"No available devices" / "Insufficient permissions" — brak reguł udev:
+    ./check/install_oak_udev.sh
+potem odlacz/podlacz USB kamery.
+
 Kalibracja skali odbywa sie na poczatku kazdej sekwencji (nie ciagle):
 podloga = najdalsza plaszczyzna w kadrze, wiec pomiar dziala nawet gdy
 swinia czesciowo zaslania widok. Strumien glebi jest maly (640x400),
@@ -395,11 +400,49 @@ class WeighingSession:
         self._refresh_display(elapsed)
 
 
+def wait_for_oak(dai, timeout_s: float = 180.0, interval_s: float = 3.0) -> None:
+    """Czeka az DepthAI zobaczy kamere OAK-D (po boocie USB bywa pozno)."""
+    deadline = time.monotonic() + timeout_s
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            devices = dai.Device.getAllAvailableDevices()
+        except Exception as e:  # noqa: BLE001
+            devices = []
+            print(f">>> OAK-D: blad listy urzadzen ({type(e).__name__}: {e})")
+        if devices:
+            info = ", ".join(str(getattr(d, "name", d)) for d in devices)
+            print(f">>> OAK-D: gotowa ({len(devices)}): {info}")
+            return
+        left = deadline - time.monotonic()
+        if left <= 0:
+            raise RuntimeError(
+                "No available devices — OAK-D niewidoczna dla DepthAI. "
+                "Jesli lsusb pokazuje 03e7/Movidius: uruchom ./check/install_oak_udev.sh "
+                "i odlacz/podlacz USB. Inaczej sprawdz kabel/zasilanie."
+            )
+        print(f">>> OAK-D: brak kamery, proba {attempt}, czekam {interval_s:.0f}s (pozostalo ~{left:.0f}s)")
+        time.sleep(interval_s)
+
+
 def run_camera() -> None:
     """Zrodlo: kamera OAK-D S2 (RGB + maly strumien glebi do kalibracji skali)."""
     import depthai as dai
 
-    pipeline = dai.Pipeline()
+    wait_for_oak(dai)
+
+    try:
+        pipeline = dai.Pipeline()
+    except RuntimeError as e:
+        if "No available devices" in str(e) or "device" in str(e).lower():
+            raise RuntimeError(
+                f"{e}\n"
+                "Hint: lsusb | grep 03e7  — jesli Movidius widoczny, brakuje udev:\n"
+                "  ./check/install_oak_udev.sh   # potem odlacz/podlacz OAK-D"
+            ) from e
+        raise
+
     cam_rgb = pipeline.create(dai.node.Camera)
     cam_rgb.build(dai.CameraBoardSocket.CAM_A)
     video_out = cam_rgb.requestOutput((RGB_W, RGB_H), type=dai.ImgFrame.Type.BGR888p)
