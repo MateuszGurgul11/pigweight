@@ -5,12 +5,12 @@ Dwa zrodla obrazu:
     python live.py rgb_video.mp4   -> plik wideo (tylko RGB, do testow)
 
 Sekwencja wazenia (identyczna dla obu zrodel):
-    S / przycisk (GPIO 17, pin 11) — start: kalibracja skali -> pomiar
+    S / przycisk (GPIO 3, pin 5) — start: kalibracja skali -> pomiar
         przez MEASURE_DURATION_S sekund -> podsumowanie. Kolejne S/przycisk
         zaczyna od nowa.
     Q — wyjscie
 
-Przycisk: GPIO 17 <-> przycisk <-> GND (wewnetrzny pull-up, aktywny LOW).
+Przycisk: GPIO 3 (pin 5) <-> przycisk <-> GND (pin 9); pull-up, aktywny LOW.
 
 Kalibracja skali odbywa sie na poczatku kazdej sekwencji (nie ciagle):
 podloga = najdalsza plaszczyzna w kadrze, wiec pomiar dziala nawet gdy
@@ -58,9 +58,9 @@ STATE_RESULT = "result"
 
 WINDOW = "WagaSwin [YOLO]"
 
-# Fizyczny przycisk startu — BCM GPIO 17 = pin fizyczny 11
-# Okablowanie: pin 11 <-> przycisk <-> GND (aktywny LOW + wewnetrzny pull-up)
-BUTTON_PIN_NAME = "D17"
+# Fizyczny przycisk startu — BCM GPIO 3 = pin fizyczny 5
+# Okablowanie: pin 5 <-> przycisk <-> GND (pin 9); aktywny LOW + pull-up
+BUTTON_PIN_NAME = "D3"
 BUTTON_DEBOUNCE_S = 0.25
 
 
@@ -89,7 +89,7 @@ class StartButton:
             self._was_active = False
             polarity = "aktywny LOW (do GND)" if self._idle_high else "aktywny HIGH"
             print(
-                f">>> Przycisk: GPIO {BUTTON_PIN_NAME} (pin 11) gotowy | "
+                f">>> Przycisk: GPIO {BUTTON_PIN_NAME} (pin 5) gotowy | "
                 f"spoczynek={'HIGH' if self._idle_high else 'LOW'} | {polarity}"
             )
             if high_n == 0:

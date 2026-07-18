@@ -1,7 +1,7 @@
-"""Test fizycznego przycisku na GPIO 17 (pin 11).
+"""Test fizycznego przycisku na GPIO 3 (pin 5).
 
-Okablowanie:
-    GPIO 17 (fizyczny pin 11)  <->  przycisk  <->  GND (np. pin 9)
+Okablowanie (jak u Ciebie):
+    GPIO 3 (fizyczny pin 5)  <->  przycisk  <->  GND (pin 9)
 
 Uruchomienie na Pi:
     python hello_button.py
@@ -15,14 +15,14 @@ import time
 import board
 import digitalio
 
-PIN = board.D17  # BCM 17 = fizyczny pin 11
+PIN = board.D3  # BCM 3 = fizyczny pin 5
 
 btn = digitalio.DigitalInOut(PIN)
 btn.direction = digitalio.Direction.INPUT
 btn.pull = digitalio.Pull.UP
 
-print("=== Test przycisku GPIO 17 (pin 11) ===")
-print("Podlaczenie: pin 11 <-> przycisk <-> GND")
+print("=== Test przycisku GPIO 3 (pin 5) ===")
+print("Podlaczenie: pin 5 <-> przycisk <-> GND (pin 9)")
 print("Puszczony = HIGH | Nacisniety = LOW")
 print("Ctrl+C = koniec\n")
 
@@ -37,7 +37,6 @@ try:
         now = time.monotonic()
 
         if high != prev:
-            # zbocze opadajace = naciśnięcie (przy pull-up)
             if prev is True and high is False and (now - last_edge) > 0.2:
                 presses += 1
                 last_edge = now
@@ -51,9 +50,7 @@ except KeyboardInterrupt:
     print(f"\nKoniec. Wykryte klikniecia: {presses}")
     if presses == 0:
         print(
-            "Brak klikniec — sprawdz:\n"
-            "  1) przewody na pin 11 i GND\n"
-            "  2) czy to na pewno fizyczny pin 11 (nie 'GPIO17' na zlej nakladce)\n"
-            "  3) czy przycisk ma zwarcie przy nacisku (multimetr / inny pin)"
+            "Brak klikniec — sprawdz przewody pin 5 i GND (pin 9) "
+            "oraz czy przycisk zwiera styki przy nacisku."
         )
     btn.deinit()
