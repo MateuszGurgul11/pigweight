@@ -196,6 +196,23 @@ def draw_status(frame: np.ndarray, lines: list[str], color: tuple[int, int, int]
         cv2.putText(frame, txt, (12, y), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2, cv2.LINE_AA)
 
 
+def draw_height_hud(frame: np.ndarray, live_cm: float | None, saved_cm: float | None) -> None:
+    """Staly napis wysokosci nad podloga — lewy dolny rog podgladu."""
+    if live_cm is not None:
+        txt = f"Wysokosc: {live_cm:.0f} cm"
+        color = (0, 255, 255)
+    elif saved_cm is not None:
+        txt = f"Wysokosc: zapisana {saved_cm:.0f} cm"
+        color = (180, 180, 180)
+    else:
+        txt = "Wysokosc: --"
+        color = (120, 120, 120)
+    h = frame.shape[0]
+    y = h - 24
+    cv2.putText(frame, txt, (12, y), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 0), 5, cv2.LINE_AA)
+    cv2.putText(frame, txt, (12, y), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2, cv2.LINE_AA)
+
+
 class WeighingSession:
     """Maszyna stanow sekwencji wazenia — wspolna dla kamery i wideo."""
 
@@ -216,6 +233,8 @@ class WeighingSession:
         self.result: dict | None = None
         self.calib_msg = ""
         self.last_print = 0.0
+        # Biezaca wysokosc kamery nad podloga z glebi (None = brak pomiaru)
+        self.live_height_cm: float | None = None
 
         # Ekran ILI9341 (moze byc None — wtedy tylko okno OpenCV)
         self.display = display
@@ -298,11 +317,13 @@ class WeighingSession:
         now = time.time()
         elapsed = now - self.state_started
 
-        # W fazie kalibracji zbieraj pomiary podlogi z glebi (tylko kamera)
-        if self.state == STATE_CALIBRATING and depth_frame is not None:
+        # Zawsze aktualizuj biezaca wysokosc z glebi (takze w IDLE)
+        if depth_frame is not None:
             floor_cm = estimate_floor_cm(depth_frame)
             if floor_cm is not None:
-                self.floor_samples.append(floor_cm)
+                self.live_height_cm = floor_cm
+                if self.state == STATE_CALIBRATING:
+                    self.floor_samples.append(floor_cm)
 
         # Przejscia stanow
         if self.state == STATE_CALIBRATING and elapsed >= CALIBRATE_DURATION_S:
@@ -396,6 +417,10 @@ class WeighingSession:
                     "Nacisnij S / przycisk aby zwazyc ponownie",
                 ], (0, 255, 255))
 
+        # Stala wysokosc nad podloga (takze przed kalibracja)
+        saved = float(self.cal["height_cm"]) if "height_cm" in self.cal else None
+        draw_height_hud(frame, self.live_height_cm, saved if not self.can_recalibrate else None)
+
         # Lustrzane odbicie statusu na ekranie ILI9341 (jesli podlaczony)
         self._refresh_display(elapsed)
 
@@ -481,12 +506,9 @@ def run_camera() -> None:
                 frame = video_in.getCvFrame()
 
                 depth_frame = None
-                if session.state == STATE_CALIBRATING:
-                    depth_in = depth_queue.tryGet()
-                    if depth_in is not None:
-                        depth_frame = depth_in.getFrame()
-                else:
-                    depth_queue.tryGet()  # oprozniaj kolejke, zeby nie lezaly stare klatki
+                depth_in = depth_queue.tryGet()
+                if depth_in is not None:
+                    depth_frame = depth_in.getFrame()
 
                 session.update(frame, depth_frame)
                 cv2.imshow(WINDOW, frame)
