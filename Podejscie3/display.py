@@ -11,6 +11,7 @@ dodaj do /boot/firmware/config.txt linie `dtoverlay=spi0-0cs` i zrebootuj.
 Bez tego kernel trzyma CE0 jako spi0 CS0 i DigitalInOut(board.CE0) pada.
 
 Test okablowania (bez reszty programu):
+    python check/hello_screen.py
     python display.py
 
 Import w live.py:

@@ -1,10 +1,10 @@
 """Test fizycznego przycisku na GPIO 3 (pin 5).
 
-Okablowanie (jak u Ciebie):
+Okablowanie:
     GPIO 3 (fizyczny pin 5)  <->  przycisk  <->  GND (pin 9)
 
 Uruchomienie na Pi:
-    python hello_button.py
+    python check/hello_button.py
 
 Bez nacisku powinno byc HIGH / puszczony.
 Po nacisnieciu — LOW / NACISNIETY (oraz licznik ++).

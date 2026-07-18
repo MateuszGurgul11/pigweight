@@ -3,7 +3,7 @@
 Uruchamia wyswietlacz i pokazuje napis. Nic wiecej — do sprawdzenia,
 czy okablowanie i SPI dzialaja.
 
-    python hello_screen.py
+    python check/hello_screen.py
 
 Wymaga (na Pi):
     pip install adafruit-circuitpython-rgb-display adafruit-blinka pillow

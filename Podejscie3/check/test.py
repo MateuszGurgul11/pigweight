@@ -1,20 +1,25 @@
 """
 Test estymacji wagi na nagranym wideo — Podejscie3 (YOLO-seg).
+
+    python check/test.py
 """
 import json
+import sys
 import time
 from pathlib import Path
 
 import cv2
 import numpy as np
 
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
 from detector import detect_best_pig, estimate_weight, WeightSmoother
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-CALIB_PATH = SCRIPT_DIR / "calibration.json"
-COEFF_PATH = SCRIPT_DIR / "weight_coeff.json"
+CALIB_PATH = ROOT / "calibration.json"
+COEFF_PATH = ROOT / "weight_coeff.json"
 
-VIDEO_PATH = Path(r"D:\Programowanie\WagaŚwiń\Podejscie1\dataset\pig_009\rgb_video.mp4")
+VIDEO_PATH = ROOT / "rgb_video.mp4"
 KNOWN_WEIGHT_PATH = VIDEO_PATH.parent / "weight_kg.txt"
 
 
@@ -71,6 +76,7 @@ def main() -> int:
     frame_idx = 0
     paused = False
     last_print = 0.0
+    frame = None
 
     win_name = "Test wagi [Podejscie3 YOLO] — video"
     cv2.namedWindow(win_name, cv2.WINDOW_NORMAL)
@@ -84,11 +90,13 @@ def main() -> int:
                 break
             frame_idx += 1
 
+        if frame is None:
+            continue
+
         display = frame.copy()
         best, all_pigs, source = detect_best_pig(frame, scale)
         smooth_kg = smoother.value()
 
-        # Rysuj wszystkie wykryte swinie
         for i, m in enumerate(all_pigs):
             color = (0, 255, 0) if m is best else (0, 200, 255)
             thickness = 3 if m is best else 1
@@ -105,17 +113,19 @@ def main() -> int:
             cx, cy = best["center"]
             label = f"{smooth_kg:.1f} kg"
             (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 1.8, 4)
-            cv2.rectangle(display, (cx-tw//2-10, cy-th-16), (cx+tw//2+10, cy+12), (0, 0, 0), -1)
-            cv2.putText(display, label, (cx-tw//2, cy), cv2.FONT_HERSHEY_SIMPLEX, 1.8, (0, 255, 255), 4, cv2.LINE_AA)
+            cv2.rectangle(display, (cx - tw // 2 - 10, cy - th - 16), (cx + tw // 2 + 10, cy + 12), (0, 0, 0), -1)
+            cv2.putText(display, label, (cx - tw // 2, cy), cv2.FONT_HERSHEY_SIMPLEX, 1.8, (0, 255, 255), 4, cv2.LINE_AA)
 
             now = time.time()
             if now - last_print >= 0.5:
                 err_str = ""
                 if known_kg:
                     err = smooth_kg - known_kg
-                    err_str = f"  |  blad: {err:+.1f} kg ({err/known_kg*100:+.1f}%)"
-                print(f"Klatka {frame_idx}/{total_frames}: {smooth_kg:.1f} kg  "
-                      f"L={best['length_cm']}cm W={best['width_cm']}cm  [{source}]{err_str}")
+                    err_str = f"  |  blad: {err:+.1f} kg ({err / known_kg * 100:+.1f}%)"
+                print(
+                    f"Klatka {frame_idx}/{total_frames}: {smooth_kg:.1f} kg  "
+                    f"L={best['length_cm']}cm W={best['width_cm']}cm  [{source}]{err_str}"
+                )
                 last_print = now
         else:
             now = time.time()
@@ -123,7 +133,6 @@ def main() -> int:
                 print(f"Klatka {frame_idx}/{total_frames}: BRAK [{source}]")
                 last_print = now
 
-        # HUD
         hud = [
             f"Klatka: {frame_idx}/{total_frames}  |  Swinie: {len(all_pigs)}  |  [{source.upper()}]",
         ]
@@ -167,7 +176,7 @@ def main() -> int:
         if known_kg:
             err = float(np.median(arr)) - known_kg
             print(f"  Znana:    {known_kg} kg")
-            print(f"  Blad:     {err:+.1f} kg ({err/known_kg*100:+.1f}%)")
+            print(f"  Blad:     {err:+.1f} kg ({err / known_kg * 100:+.1f}%)")
         print("=" * 50)
 
     return 0

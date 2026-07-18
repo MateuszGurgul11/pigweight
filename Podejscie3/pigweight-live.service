@@ -1,0 +1,21 @@
+[Unit]
+Description=PigWeight live.py — waga swin (OAK-D + ILI9341)
+After=network-online.target multi-user.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# User= ustawiane przez install_autostart.sh
+WorkingDirectory=/REPLACE_ROOT
+Environment=PIGWEIGHT_BOOT_DELAY=1
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/REPLACE_HOME/.Xauthority
+ExecStart=/REPLACE_ROOT/start_live.sh
+Restart=on-failure
+RestartSec=10
+# OpenCV / kamera moga potrzebowac sesji graficznej
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

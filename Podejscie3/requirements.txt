@@ -12,7 +12,7 @@ uvicorn[standard]>=0.32.0
 python-multipart>=0.0.12
 pydantic>=2.9.0
 
-# --- Obrazowanie i pomiary (app.py, detector.py, test.py) ---
+# --- Obrazowanie i pomiary (app.py, detector.py, check/test.py) ---
 numpy>=1.26.0,<3.0
 opencv-python>=4.10.0
 
@@ -22,7 +22,7 @@ ultralytics>=8.4.0
 # --- Kamera OAK / Luxonis DepthAI (lokalny .venv; planowany live.py) ---
 depthai>=3.7.0
 
-# --- Wyswietlacz ILI9341 na Raspberry Pi 5 (display.py, hello_screen.py) ---
+# --- Wyswietlacz ILI9341 na Raspberry Pi 5 (display.py, check/hello_screen.py) ---
 # Tylko na Pi — na innych platformach import 'board' sie nie powiedzie
 # i program dziala bez ekranu (init_display() zwraca None).
 adafruit-circuitpython-rgb-display>=3.11.0
