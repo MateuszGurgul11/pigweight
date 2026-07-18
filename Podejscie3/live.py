@@ -196,23 +196,6 @@ def draw_status(frame: np.ndarray, lines: list[str], color: tuple[int, int, int]
         cv2.putText(frame, txt, (12, y), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2, cv2.LINE_AA)
 
 
-def draw_height_hud(frame: np.ndarray, live_cm: float | None, saved_cm: float | None) -> None:
-    """Staly napis wysokosci nad podloga — lewy dolny rog podgladu."""
-    if live_cm is not None:
-        txt = f"Wysokosc: {live_cm:.0f} cm"
-        color = (0, 255, 255)
-    elif saved_cm is not None:
-        txt = f"Wysokosc: zapisana {saved_cm:.0f} cm"
-        color = (180, 180, 180)
-    else:
-        txt = "Wysokosc: --"
-        color = (120, 120, 120)
-    h = frame.shape[0]
-    y = h - 24
-    cv2.putText(frame, txt, (12, y), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 0), 5, cv2.LINE_AA)
-    cv2.putText(frame, txt, (12, y), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2, cv2.LINE_AA)
-
-
 class WeighingSession:
     """Maszyna stanow sekwencji wazenia — wspolna dla kamery i wideo."""
 
@@ -233,13 +216,16 @@ class WeighingSession:
         self.result: dict | None = None
         self.calib_msg = ""
         self.last_print = 0.0
-        # Biezaca wysokosc kamery nad podloga z glebi (None = brak pomiaru)
-        self.live_height_cm: float | None = None
+        # Wysokosc kamery nad podloga (z glebi) — aktualizowana caly czas
+        self.live_height_cm: float | None = (
+            float(self.cal["height_cm"]) if not self.can_recalibrate else None
+        )
 
         # Ekran ILI9341 (moze byc None — wtedy tylko okno OpenCV)
         self.display = display
         self._disp_state: str | None = None
         self._disp_last = 0.0
+        self._disp_height_shown: float | None = None
 
     def start(self) -> None:
         self.smoother.clear()
@@ -286,30 +272,41 @@ class WeighingSession:
         print(f">>> Kalibracja OK: {self.calib_msg} ({len(self.floor_samples)} probek)")
 
     def _refresh_display(self, elapsed: float) -> None:
-        """Odswieza ILI9341. Rysuje przy zmianie stanu; fazy trwajace ~5x/s."""
+        """Odswieza ILI9341. Stan + wysokosc na zywo (~2x/s w idle)."""
         if self.display is None:
             return
         now = time.time()
+        h = self.live_height_cm
         changed = self.state != self._disp_state
+        height_tick = now - self._disp_last >= 0.5
+
         if self.state == STATE_IDLE:
-            if changed:
-                self.display.show_idle()
+            if changed or height_tick:
+                self.display.show_idle(h)
+                self._disp_last = now
+                self._disp_height_shown = h
         elif self.state == STATE_CALIBRATING:
             if changed or now - self._disp_last >= 0.2:
                 remaining = max(0.0, CALIBRATE_DURATION_S - elapsed)
-                self.display.show_calibrating(remaining, len(self.floor_samples))
+                self.display.show_calibrating(remaining, len(self.floor_samples), h)
                 self._disp_last = now
+                self._disp_height_shown = h
         elif self.state == STATE_MEASURING:
             if changed or now - self._disp_last >= 0.2:
                 remaining = max(0.0, MEASURE_DURATION_S - elapsed)
-                self.display.show_measuring(remaining, len(self.session_weights))
+                self.display.show_measuring(remaining, len(self.session_weights), h)
                 self._disp_last = now
+                self._disp_height_shown = h
         elif self.state == STATE_RESULT:
-            if changed:
+            if changed or height_tick:
                 if self.result is None:
-                    self.display.show_no_pig()
+                    self.display.show_no_pig(h)
                 else:
-                    self.display.show_result(self.result, float(self.cal["height_cm"]))
+                    self.display.show_result(
+                        self.result, float(self.cal["height_cm"]), live_height_cm=h,
+                    )
+                self._disp_last = now
+                self._disp_height_shown = h
         self._disp_state = self.state
 
     def update(self, frame: np.ndarray, depth_frame: np.ndarray | None = None) -> None:
@@ -317,7 +314,7 @@ class WeighingSession:
         now = time.time()
         elapsed = now - self.state_started
 
-        # Zawsze aktualizuj biezaca wysokosc z glebi (takze w IDLE)
+        # Wysokosc nad podloga — zawsze gdy jest glebia (takze przed wazeniem)
         if depth_frame is not None:
             floor_cm = estimate_floor_cm(depth_frame)
             if floor_cm is not None:
@@ -386,28 +383,35 @@ class WeighingSession:
                 cv2.putText(frame, msg, (12, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 3, cv2.LINE_AA)
                 cv2.putText(frame, msg, (12, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
 
-        # Status sekwencji na ekranie
+        # Status sekwencji na ekranie OpenCV
+        h_txt = (
+            f"Wysokosc: {self.live_height_cm:.0f} cm"
+            if self.live_height_cm is not None
+            else "Wysokosc: ---"
+        )
         if self.state == STATE_IDLE:
-            draw_status(frame, ["Nacisnij S / przycisk aby rozpoczac"], (255, 255, 255))
+            draw_status(frame, ["Nacisnij S / przycisk aby rozpoczac", h_txt], (255, 255, 255))
         elif self.state == STATE_CALIBRATING:
             remaining = max(0.0, CALIBRATE_DURATION_S - elapsed)
-            lines = [f"KALIBRACJA SKALI... {remaining:.1f} s"]
+            lines = [f"KALIBRACJA SKALI... {remaining:.1f} s", h_txt]
             if self.can_recalibrate:
-                lines.append(f"Probki podlogi: {len(self.floor_samples)}")
+                lines.insert(1, f"Probki podlogi: {len(self.floor_samples)}")
             else:
-                lines.append("tryb wideo — zapisana skala")
+                lines.insert(1, "tryb wideo — zapisana skala")
             draw_status(frame, lines, (0, 200, 255))
         elif self.state == STATE_MEASURING:
             remaining = max(0.0, MEASURE_DURATION_S - elapsed)
             draw_status(frame, [
                 f"WAZENIE... {remaining:.1f} s",
                 f"Pomiary: {len(self.session_weights)}",
+                h_txt,
             ], (0, 255, 0))
         elif self.state == STATE_RESULT:
             if self.result is None:
                 draw_status(frame, [
                     "BRAK POMIAROW — nie wykryto swini",
                     "Nacisnij S / przycisk ponownie",
+                    h_txt,
                 ], (0, 0, 255))
             else:
                 r = self.result
@@ -415,17 +419,18 @@ class WeighingSession:
                     f"WYNIK: srednia {r['mean']:.1f} kg | mediana {r['median']:.1f} kg",
                     f"Min/Max: {r['min']:.1f} / {r['max']:.1f} kg  ({r['n']} pomiarow)",
                     "Nacisnij S / przycisk aby zwazyc ponownie",
+                    h_txt,
                 ], (0, 255, 255))
 
-        # Stala wysokosc nad podloga (takze przed kalibracja)
-        saved = float(self.cal["height_cm"]) if "height_cm" in self.cal else None
-        draw_height_hud(frame, self.live_height_cm, saved if not self.can_recalibrate else None)
-
-        # Lustrzane odbicie statusu na ekranie ILI9341 (jesli podlaczony)
         self._refresh_display(elapsed)
 
 
-def wait_for_oak(dai, timeout_s: float = 180.0, interval_s: float = 3.0) -> None:
+def wait_for_oak(
+    dai,
+    timeout_s: float = 180.0,
+    interval_s: float = 3.0,
+    on_wait=None,
+) -> None:
     """Czeka az DepthAI zobaczy kamere OAK-D (po boocie USB bywa pozno)."""
     deadline = time.monotonic() + timeout_s
     attempt = 0
@@ -439,6 +444,8 @@ def wait_for_oak(dai, timeout_s: float = 180.0, interval_s: float = 3.0) -> None
         if devices:
             info = ", ".join(str(getattr(d, "name", d)) for d in devices)
             print(f">>> OAK-D: gotowa ({len(devices)}): {info}")
+            if on_wait is not None:
+                on_wait("Kamera znaleziona")
             return
         left = deadline - time.monotonic()
         if left <= 0:
@@ -447,7 +454,10 @@ def wait_for_oak(dai, timeout_s: float = 180.0, interval_s: float = 3.0) -> None
                 "Jesli lsusb pokazuje 03e7/Movidius: uruchom ./check/install_oak_udev.sh "
                 "i odlacz/podlacz USB. Inaczej sprawdz kabel/zasilanie."
             )
+        msg = f"Oczekuje na kamere ({attempt})"
         print(f">>> OAK-D: brak kamery, proba {attempt}, czekam {interval_s:.0f}s (pozostalo ~{left:.0f}s)")
+        if on_wait is not None:
+            on_wait(msg)
         time.sleep(interval_s)
 
 
@@ -455,8 +465,21 @@ def run_camera() -> None:
     """Zrodlo: kamera OAK-D S2 (RGB + maly strumien glebi do kalibracji skali)."""
     import depthai as dai
 
-    wait_for_oak(dai)
+    disp = init_display()
+    if disp is not None:
+        disp.show_booting("Start systemu...")
 
+    def _boot(step: str) -> None:
+        if disp is not None:
+            try:
+                disp.show_booting(step)
+            except Exception:  # noqa: BLE001
+                pass
+
+    _boot("Oczekuje na OAK-D")
+    wait_for_oak(dai, on_wait=_boot)
+
+    _boot("Laczenie z kamera...")
     try:
         pipeline = dai.Pipeline()
     except RuntimeError as e:
@@ -479,14 +502,18 @@ def run_camera() -> None:
     stereo.setOutputSize(DEPTH_W, DEPTH_H)
     depth_queue = stereo.depth.createOutputQueue(maxSize=1, blocking=False)
 
+    _boot("Inicjalizacja...")
     pipeline.start()
 
     # Ogniskowa fx z fabrycznej kalibracji kamery — stala, czytana raz
     device = pipeline.getDefaultDevice()
     fx = float(device.readCalibration().getCameraIntrinsics(dai.CameraBoardSocket.CAM_A, RGB_W, RGB_H)[0][0])
 
-    session = WeighingSession(fx=fx, display=init_display())
+    session = WeighingSession(fx=fx, display=disp)
     btn = StartButton()
+    if disp is not None:
+        disp.show_idle(session.live_height_cm)
+
     print(f"Zrodlo: kamera OAK-D S2 | podloga={session.cal['height_cm']}cm, skala={session.scale:.6f} cm/px | fx={fx:.1f}px | metoda={session.coeffs['method']}")
     print(f"Czas pomiaru: {MEASURE_DURATION_S:.0f} s (+ {CALIBRATE_DURATION_S:.0f} s kalibracji skali)")
     print("Uruchomiono kamere [YOLO-seg]. S / przycisk — start wazenia, Q — wyjscie\n")
@@ -537,6 +564,9 @@ def run_video(path: str) -> None:
 
     session = WeighingSession(fx=None, display=init_display())  # brak glebi -> zapisana skala
     btn = StartButton()
+    if session.display is not None:
+        session.display.show_booting("Tryb wideo...")
+        session.display.show_idle(session.live_height_cm)
     print(f"Zrodlo: wideo {video_path.name} ({total} klatek, {fps:.0f} FPS) | skala={session.scale:.6f} cm/px | metoda={session.coeffs['method']}")
     print(f"Czas pomiaru: {MEASURE_DURATION_S:.0f} s (+ {CALIBRATE_DURATION_S:.0f} s stabilizacji)")
     print("Wideo zapetla sie. S / przycisk — start wazenia, Q — wyjscie\n")

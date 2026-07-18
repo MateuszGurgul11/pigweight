@@ -1,7 +1,7 @@
 """Ekran ILI9341 (240x320 SPI) dla wagi swin — Raspberry Pi 5.
 
-Wyswietla wynik wazenia z live.py: srednia, mediana, min/max, std oraz
-wysokosc pomiaru (podloga z kalibracji).
+Wyswietla wynik wazenia z live.py, wysokosc kamery nad podloga (na zywo)
+oraz komunikat startu systemu.
 
 Pi 5 ma nowy kontroler GPIO (RP1), wiec uzywamy Adafruit Blinka +
 adafruit-circuitpython-rgb-display (chodzi przez lgpio).
@@ -48,6 +48,12 @@ def _font(size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.load_default()
 
 
+def _fmt_height(height_cm: float | None) -> str:
+    if height_cm is None:
+        return "---"
+    return f"{height_cm:.0f} cm"
+
+
 class PigDisplay:
     """Cienka warstwa nad ILI9341 — rysuje ekrany stanow i wynik."""
 
@@ -67,7 +73,6 @@ class PigDisplay:
             width=320, height=240,          # natywny raster panelu (poziomy)
             baudrate=baudrate, rotation=rotation,  # 90 = obraz portretowy 240x320
         )
-        # Rozmiary dopasowane do canvasu 240x320 (wczesniej za duze → nachodzenie)
         self._f_big = _font(36)
         self._f_title = _font(18)
         self._f_row = _font(16)
@@ -91,64 +96,87 @@ class PigDisplay:
         w = draw.textbbox((0, 0), text, font=font)[2]
         draw.text(((WIDTH - w) // 2, y), text, font=font, fill=fill)
 
+    def _draw_height(self, draw, height_cm: float | None, y: int = 292) -> None:
+        """Pasek wysokosci u dolu ekranu."""
+        self._centered(draw, f"Wysokosc: {_fmt_height(height_cm)}", self._f_small, y, CYAN)
+
     # --- ekrany stanow ---
 
-    def show_idle(self) -> None:
+    def show_booting(self, step: str = "") -> None:
+        """Komunikat przy starcie systemu (przed kamera / pipeline)."""
         img, d = self._canvas()
-        self._centered(d, "WAGA SWIN", self._f_title, 100, WHITE)
-        self._centered(d, "Nacisnij S / przycisk", self._f_small, 160, GREY)
-        self._centered(d, "aby rozpoczac wazenie", self._f_small, 185, GREY)
+        self._centered(d, "WAGA SWIN", self._f_title, 70, WHITE)
+        self._centered(d, "Uruchamianie...", self._f_big, 120, GREEN)
+        if step:
+            self._centered(d, step[:28], self._f_small, 200, GREY)
+        self._centered(d, "Prosze czekac", self._f_small, 250, GREY)
         self._push(img)
 
-    def show_calibrating(self, remaining: float, samples: int) -> None:
+    def show_idle(self, height_cm: float | None = None) -> None:
         img, d = self._canvas()
-        self._centered(d, "KALIBRACJA SKALI", self._f_title, 90, CYAN)
-        self._centered(d, f"{remaining:.1f} s", self._f_big, 140, WHITE)
-        self._centered(d, f"probki podlogi: {samples}", self._f_small, 230, GREY)
+        self._centered(d, "WAGA SWIN", self._f_title, 36, WHITE)
+        self._centered(d, "Wysokosc", self._f_small, 80, GREY)
+        self._centered(d, _fmt_height(height_cm), self._f_big, 110, CYAN)
+        self._centered(d, "Nacisnij S / przycisk", self._f_small, 190, GREY)
+        self._centered(d, "aby rozpoczac wazenie", self._f_small, 215, GREY)
+        self._draw_height(d, height_cm)
         self._push(img)
 
-    def show_measuring(self, remaining: float, count: int) -> None:
+    def show_calibrating(
+        self, remaining: float, samples: int, height_cm: float | None = None,
+    ) -> None:
         img, d = self._canvas()
-        self._centered(d, "WAZENIE...", self._f_title, 90, GREEN)
-        self._centered(d, f"{remaining:.1f} s", self._f_big, 140, WHITE)
-        self._centered(d, f"pomiary: {count}", self._f_small, 230, GREY)
+        self._centered(d, "KALIBRACJA SKALI", self._f_title, 50, CYAN)
+        self._centered(d, f"{remaining:.1f} s", self._f_big, 100, WHITE)
+        self._centered(d, f"probki: {samples}", self._f_small, 170, GREY)
+        self._draw_height(d, height_cm)
         self._push(img)
 
-    def show_no_pig(self) -> None:
+    def show_measuring(
+        self, remaining: float, count: int, height_cm: float | None = None,
+    ) -> None:
         img, d = self._canvas()
-        self._centered(d, "BRAK POMIAROW", self._f_title, 110, RED)
-        self._centered(d, "nie wykryto swini", self._f_small, 160, GREY)
-        self._centered(d, "Nacisnij S ponownie", self._f_small, 195, GREY)
+        self._centered(d, "WAZENIE...", self._f_title, 50, GREEN)
+        self._centered(d, f"{remaining:.1f} s", self._f_big, 100, WHITE)
+        self._centered(d, f"pomiary: {count}", self._f_small, 170, GREY)
+        self._draw_height(d, height_cm)
         self._push(img)
 
-    def show_result(self, r: dict, height_cm: float) -> None:
+    def show_no_pig(self, height_cm: float | None = None) -> None:
+        img, d = self._canvas()
+        self._centered(d, "BRAK POMIAROW", self._f_title, 90, RED)
+        self._centered(d, "nie wykryto swini", self._f_small, 140, GREY)
+        self._centered(d, "Nacisnij S ponownie", self._f_small, 175, GREY)
+        self._draw_height(d, height_cm)
+        self._push(img)
+
+    def show_result(
+        self, r: dict, height_cm: float, live_height_cm: float | None = None,
+    ) -> None:
         """Glowny ekran wyniku. r = {n, mean, median, min, max, std}."""
         img, d = self._canvas()
 
-        # Naglowek
         d.rectangle((0, 0, WIDTH, 28), fill=(20, 60, 30))
         self._centered(d, "WYNIK WAZENIA", self._f_title, 5, GREEN)
 
-        # Srednia — najwazniejsza, ale miesci sie w 240 px
-        self._centered(d, f"{r['mean']:.1f} kg", self._f_big, 44, WHITE)
+        self._centered(d, f"{r['mean']:.1f} kg", self._f_big, 40, WHITE)
 
-        # Wiersze szczegolow (label lewo, wartosc prawo — bez nachodzenia)
         rows = [
             ("Mediana", f"{r['median']:.1f} kg", CYAN),
             ("Min", f"{r['min']:.1f} kg", YELLOW),
             ("Max", f"{r['max']:.1f} kg", YELLOW),
             ("Std", f"{r['std']:.1f} kg", GREY),
-            ("Wysokosc", f"{height_cm:.0f} cm", GREY),
+            ("Kalibr.", f"{height_cm:.0f} cm", GREY),
         ]
-        y = 100
+        y = 95
         for label, value, color in rows:
             d.text((12, y), label, font=self._f_row, fill=GREY)
             vw = d.textbbox((0, 0), value, font=self._f_row)[2]
             d.text((WIDTH - 12 - vw, y), value, font=self._f_row, fill=color)
-            y += 32
+            y += 28
 
-        # Stopka
-        self._centered(d, f"{r['n']} pom. | S = ponownie", self._f_small, 290, GREY)
+        self._centered(d, f"{r['n']} pom. | S = ponownie", self._f_small, 250, GREY)
+        self._draw_height(d, live_height_cm if live_height_cm is not None else height_cm)
         self._push(img)
 
 
@@ -167,19 +195,21 @@ def init_display() -> PigDisplay | None:
 
 
 if __name__ == "__main__":
-    # Test okablowania — pokazuje kolejno ekrany i przykladowy wynik
     import time
 
     disp = init_display()
     if disp is None:
         raise SystemExit("Nie udalo sie zainicjalizowac ekranu — sprawdz SPI i okablowanie.")
 
-    print("Test: idle -> kalibracja -> wazenie -> wynik (co 2 s)")
-    disp.show_idle();                          time.sleep(2)
-    disp.show_calibrating(1.0, 42);            time.sleep(2)
-    disp.show_measuring(3.0, 128);             time.sleep(2)
+    print("Test: boot -> idle -> kalibracja -> wazenie -> wynik")
+    disp.show_booting("Start systemu...");       time.sleep(2)
+    disp.show_booting("Oczekuje na OAK-D");      time.sleep(1)
+    disp.show_idle(245.0);                       time.sleep(2)
+    disp.show_calibrating(1.0, 42, 245.0);       time.sleep(2)
+    disp.show_measuring(3.0, 128, 244.0);        time.sleep(2)
     disp.show_result(
         {"n": 128, "mean": 112.4, "median": 111.8, "min": 98.2, "max": 130.5, "std": 6.3},
         height_cm=245,
+        live_height_cm=244.0,
     )
-    print("Jesli widzisz ekran wyniku — okablowanie i SPI dzialaja.")
+    print("Jesli widzisz ekrany — okablowanie i SPI dzialaja.")
