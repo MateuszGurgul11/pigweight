@@ -59,16 +59,18 @@ STATE_RESULT = "result"
 WINDOW = "WagaSwin [YOLO]"
 
 # Fizyczny przycisk startu — BCM GPIO 17 = pin fizyczny 11
+# Okablowanie: pin 11 <-> przycisk <-> GND (aktywny LOW + wewnetrzny pull-up)
 BUTTON_PIN_NAME = "D17"
-BUTTON_DEBOUNCE_S = 0.05
+BUTTON_DEBOUNCE_S = 0.25
 
 
 class StartButton:
-    """Przycisk startu na GPIO (pull-up, aktywny LOW). Bez Blinka = martwy obiekt."""
+    """Przycisk startu na GPIO. Bez Blinka = martwy obiekt (tylko klawisz S)."""
 
     def __init__(self) -> None:
         self._pin = None
-        self._prev_high = True
+        self._idle_high = True  # True = pull-up / aktywny LOW
+        self._was_active = False
         self._last_fire = 0.0
         try:
             import board
@@ -79,25 +81,45 @@ class StartButton:
             dio.direction = digitalio.Direction.INPUT
             dio.pull = digitalio.Pull.UP
             self._pin = dio
-            self._prev_high = bool(dio.value)
-            print(f">>> Przycisk: GPIO {BUTTON_PIN_NAME} (pin 11) gotowy")
+
+            time.sleep(0.05)
+            samples = [bool(dio.value) for _ in range(10)]
+            high_n = sum(1 for s in samples if s)
+            self._idle_high = high_n >= 5
+            self._was_active = False
+            polarity = "aktywny LOW (do GND)" if self._idle_high else "aktywny HIGH"
+            print(
+                f">>> Przycisk: GPIO {BUTTON_PIN_NAME} (pin 11) gotowy | "
+                f"spoczynek={'HIGH' if self._idle_high else 'LOW'} | {polarity}"
+            )
+            if high_n == 0:
+                print(">>> Przycisk: pin zawsze LOW — sprawdz czy nie jest na stale zwarty do GND")
+            elif high_n == 10:
+                print(
+                    ">>> Przycisk: pin w spoczynku HIGH (OK). "
+                    "Naciskaj — w konsoli musi pojawic sie 'NACISNIETY'"
+                )
         except Exception as e:  # noqa: BLE001 — laptop / brak Blinka
             print(f">>> Przycisk: niedostepny ({type(e).__name__}: {e}) — tylko klawisz S")
 
+    def _active(self) -> bool:
+        high = bool(self._pin.value)
+        return (not high) if self._idle_high else high
+
     def pressed(self) -> bool:
-        """True raz na zbocze opadajace (naciśnięcie), z debounce."""
+        """True raz na naciśnięcie (wejscie w stan aktywny), z debounce."""
         if self._pin is None:
             return False
-        high = bool(self._pin.value)
-        falling = self._prev_high and not high
-        self._prev_high = high
-        if not falling:
-            return False
+
+        active = self._active()
         now = time.monotonic()
-        if now - self._last_fire < BUTTON_DEBOUNCE_S:
-            return False
-        self._last_fire = now
-        return True
+        fired = False
+        if active and not self._was_active and (now - self._last_fire) >= BUTTON_DEBOUNCE_S:
+            self._last_fire = now
+            fired = True
+            print(">>> Przycisk: NACISNIETY")
+        self._was_active = active
+        return fired
 
     def close(self) -> None:
         if self._pin is not None:
