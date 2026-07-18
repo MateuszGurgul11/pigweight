@@ -1,4 +1,4 @@
-"""Ekran ILI9341 (320x240 SPI) dla wagi swin — Raspberry Pi 5.
+"""Ekran ILI9341 (240x320 SPI) dla wagi swin — Raspberry Pi 5.
 
 Wyswietla wynik wazenia z live.py: srednia, mediana, min/max, std oraz
 wysokosc pomiaru (podloga z kalibracji).
@@ -20,8 +20,8 @@ from __future__ import annotations
 
 from PIL import Image, ImageDraw, ImageFont
 
-# Rozdzielczosc w orientacji poziomej (rotation=90)
-WIDTH, HEIGHT = 320, 240
+# Native ILI9341 — orientacja pionowa (rotation=0)
+WIDTH, HEIGHT = 240, 320
 
 # Kolory (RGB)
 BG = (0, 0, 0)
@@ -50,7 +50,7 @@ def _font(size: int) -> ImageFont.FreeTypeFont:
 class PigDisplay:
     """Cienka warstwa nad ILI9341 — rysuje ekrany stanow i wynik."""
 
-    def __init__(self, baudrate: int = 24_000_000, rotation: int = 90) -> None:
+    def __init__(self, baudrate: int = 24_000_000, rotation: int = 0) -> None:
         # Import lokalny, zeby modul dalo sie zaladowac tez bez sprzetu
         import board
         import digitalio
@@ -92,30 +92,30 @@ class PigDisplay:
 
     def show_idle(self) -> None:
         img, d = self._canvas()
-        self._centered(d, "WAGA SWIN", self._f_title, 70, WHITE)
-        self._centered(d, "Nacisnij S / przycisk", self._f_small, 130, GREY)
-        self._centered(d, "aby rozpoczac wazenie", self._f_small, 155, GREY)
+        self._centered(d, "WAGA SWIN", self._f_title, 100, WHITE)
+        self._centered(d, "Nacisnij S / przycisk", self._f_small, 160, GREY)
+        self._centered(d, "aby rozpoczac wazenie", self._f_small, 185, GREY)
         self._push(img)
 
     def show_calibrating(self, remaining: float, samples: int) -> None:
         img, d = self._canvas()
-        self._centered(d, "KALIBRACJA SKALI", self._f_title, 80, CYAN)
-        self._centered(d, f"{remaining:.1f} s", self._f_big, 115, WHITE)
-        self._centered(d, f"probki podlogi: {samples}", self._f_small, 190, GREY)
+        self._centered(d, "KALIBRACJA SKALI", self._f_title, 90, CYAN)
+        self._centered(d, f"{remaining:.1f} s", self._f_big, 140, WHITE)
+        self._centered(d, f"probki podlogi: {samples}", self._f_small, 230, GREY)
         self._push(img)
 
     def show_measuring(self, remaining: float, count: int) -> None:
         img, d = self._canvas()
-        self._centered(d, "WAZENIE...", self._f_title, 80, GREEN)
-        self._centered(d, f"{remaining:.1f} s", self._f_big, 115, WHITE)
-        self._centered(d, f"pomiary: {count}", self._f_small, 190, GREY)
+        self._centered(d, "WAZENIE...", self._f_title, 90, GREEN)
+        self._centered(d, f"{remaining:.1f} s", self._f_big, 140, WHITE)
+        self._centered(d, f"pomiary: {count}", self._f_small, 230, GREY)
         self._push(img)
 
     def show_no_pig(self) -> None:
         img, d = self._canvas()
-        self._centered(d, "BRAK POMIAROW", self._f_title, 90, RED)
-        self._centered(d, "nie wykryto swini", self._f_small, 130, GREY)
-        self._centered(d, "Nacisnij S ponownie", self._f_small, 165, GREY)
+        self._centered(d, "BRAK POMIAROW", self._f_title, 110, RED)
+        self._centered(d, "nie wykryto swini", self._f_small, 160, GREY)
+        self._centered(d, "Nacisnij S ponownie", self._f_small, 195, GREY)
         self._push(img)
 
     def show_result(self, r: dict, height_cm: float) -> None:
@@ -127,24 +127,24 @@ class PigDisplay:
         self._centered(d, "WYNIK WAZENIA", self._f_title, 4, GREEN)
 
         # Srednia — najwazniejsza, duza czcionka
-        self._centered(d, f"{r['mean']:.1f} kg", self._f_big, 36, WHITE)
+        self._centered(d, f"{r['mean']:.1f} kg", self._f_big, 48, WHITE)
 
         # Wiersze szczegolow
         rows = [
             ("Mediana", f"{r['median']:.1f} kg", CYAN),
-            ("Min / Max", f"{r['min']:.1f} / {r['max']:.1f} kg", YELLOW),
+            ("Min / Max", f"{r['min']:.1f} / {r['max']:.1f}", YELLOW),
             ("Std", f"{r['std']:.1f} kg", GREY),
             ("Wysokosc", f"{height_cm:.0f} cm", GREY),
         ]
-        y = 104
+        y = 130
         for label, value, color in rows:
-            d.text((14, y), label, font=self._f_row, fill=GREY)
+            d.text((10, y), label, font=self._f_row, fill=GREY)
             vw = d.textbbox((0, 0), value, font=self._f_row)[2]
-            d.text((WIDTH - 14 - vw, y), value, font=self._f_row, fill=color)
-            y += 30
+            d.text((WIDTH - 10 - vw, y), value, font=self._f_row, fill=color)
+            y += 36
 
         # Stopka
-        self._centered(d, f"{r['n']} pomiarow  |  S = ponownie", self._f_small, 224, GREY)
+        self._centered(d, f"{r['n']} pom. | S = ponownie", self._f_small, 295, GREY)
         self._push(img)
 
 
