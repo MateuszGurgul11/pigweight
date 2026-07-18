@@ -29,9 +29,13 @@ cs = digitalio.DigitalInOut(board.CE0)    # CS  -> pin 24
 dc = digitalio.DigitalInOut(board.D24)    # DC  -> pin 18
 rst = digitalio.DigitalInOut(board.D25)   # RST -> pin 22
 
-disp = ili9341.ILI9341(spi, cs=cs, dc=dc, rst=rst, baudrate=24_000_000, rotation=0)
+disp = ili9341.ILI9341(
+    spi, cs=cs, dc=dc, rst=rst,
+    width=320, height=240,          # natywny raster panelu (poziomy)
+    baudrate=24_000_000, rotation=90,  # 90 = obraz portretowy 240x320
+)
 
-WIDTH, HEIGHT = 240, 320  # orientacja pionowa (native ILI9341)
+WIDTH, HEIGHT = 240, 320  # canvas portretowy (po rotation=90)
 
 # --- rysowanie ---
 img = Image.new("RGB", (WIDTH, HEIGHT), (0, 0, 0))  # czarne tlo

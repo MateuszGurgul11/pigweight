@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from PIL import Image, ImageDraw, ImageFont
 
-# Native ILI9341 — orientacja pionowa (rotation=0)
+# Canvas portretowy (rotation=90 na natywnym 320x240)
 WIDTH, HEIGHT = 240, 320
 
 # Kolory (RGB)
@@ -50,7 +50,7 @@ def _font(size: int) -> ImageFont.FreeTypeFont:
 class PigDisplay:
     """Cienka warstwa nad ILI9341 — rysuje ekrany stanow i wynik."""
 
-    def __init__(self, baudrate: int = 24_000_000, rotation: int = 0) -> None:
+    def __init__(self, baudrate: int = 24_000_000, rotation: int = 90) -> None:
         # Import lokalny, zeby modul dalo sie zaladowac tez bez sprzetu
         import board
         import digitalio
@@ -63,7 +63,8 @@ class PigDisplay:
 
         self._disp = ili9341.ILI9341(
             spi, cs=cs, dc=dc, rst=rst,
-            baudrate=baudrate, rotation=rotation,
+            width=320, height=240,          # natywny raster panelu (poziomy)
+            baudrate=baudrate, rotation=rotation,  # 90 = obraz portretowy 240x320
         )
         self._f_big = _font(56)
         self._f_title = _font(22)
