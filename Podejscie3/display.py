@@ -66,10 +66,11 @@ class PigDisplay:
             width=320, height=240,          # natywny raster panelu (poziomy)
             baudrate=baudrate, rotation=rotation,  # 90 = obraz portretowy 240x320
         )
-        self._f_big = _font(56)
-        self._f_title = _font(22)
-        self._f_row = _font(24)
-        self._f_small = _font(18)
+        # Rozmiary dopasowane do canvasu 240x320 (wczesniej za duze → nachodzenie)
+        self._f_big = _font(36)
+        self._f_title = _font(18)
+        self._f_row = _font(16)
+        self._f_small = _font(14)
         self.clear()
 
     # --- niskopoziomowe ---
@@ -124,28 +125,29 @@ class PigDisplay:
         img, d = self._canvas()
 
         # Naglowek
-        d.rectangle((0, 0, WIDTH, 30), fill=(20, 60, 30))
-        self._centered(d, "WYNIK WAZENIA", self._f_title, 4, GREEN)
+        d.rectangle((0, 0, WIDTH, 28), fill=(20, 60, 30))
+        self._centered(d, "WYNIK WAZENIA", self._f_title, 5, GREEN)
 
-        # Srednia — najwazniejsza, duza czcionka
-        self._centered(d, f"{r['mean']:.1f} kg", self._f_big, 48, WHITE)
+        # Srednia — najwazniejsza, ale miesci sie w 240 px
+        self._centered(d, f"{r['mean']:.1f} kg", self._f_big, 44, WHITE)
 
-        # Wiersze szczegolow
+        # Wiersze szczegolow (label lewo, wartosc prawo — bez nachodzenia)
         rows = [
             ("Mediana", f"{r['median']:.1f} kg", CYAN),
-            ("Min / Max", f"{r['min']:.1f} / {r['max']:.1f}", YELLOW),
+            ("Min", f"{r['min']:.1f} kg", YELLOW),
+            ("Max", f"{r['max']:.1f} kg", YELLOW),
             ("Std", f"{r['std']:.1f} kg", GREY),
             ("Wysokosc", f"{height_cm:.0f} cm", GREY),
         ]
-        y = 130
+        y = 100
         for label, value, color in rows:
-            d.text((10, y), label, font=self._f_row, fill=GREY)
+            d.text((12, y), label, font=self._f_row, fill=GREY)
             vw = d.textbbox((0, 0), value, font=self._f_row)[2]
-            d.text((WIDTH - 10 - vw, y), value, font=self._f_row, fill=color)
-            y += 36
+            d.text((WIDTH - 12 - vw, y), value, font=self._f_row, fill=color)
+            y += 32
 
         # Stopka
-        self._centered(d, f"{r['n']} pom. | S = ponownie", self._f_small, 295, GREY)
+        self._centered(d, f"{r['n']} pom. | S = ponownie", self._f_small, 290, GREY)
         self._push(img)
 
 
