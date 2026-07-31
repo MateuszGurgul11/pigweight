@@ -15,6 +15,18 @@ exec >>"$LOG" 2>&1
 echo "======== $(date -Iseconds) start_live ========"
 echo "ROOT=$ROOT USER=$(id -un) HOME=${HOME:-?} DISPLAY=${DISPLAY:-?}"
 
+# Aktualizacja kodu z GitHuba (nie przerywaj bootu przy braku sieci)
+if command -v git >/dev/null && git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  echo ">>> start_live: git pull..."
+  if git -C "$ROOT" pull --ff-only 2>&1; then
+    echo ">>> start_live: git pull OK"
+  else
+    echo ">>> start_live: UWAGA — git pull nieudany, startuje lokalna wersja"
+  fi
+else
+  echo ">>> start_live: brak repo git w $ROOT — pomijam pull"
+fi
+
 # Virtualenv projektu (jesli istnieje)
 if [[ -x "$ROOT/.venv/bin/python" ]]; then
   PYTHON="$ROOT/.venv/bin/python"
