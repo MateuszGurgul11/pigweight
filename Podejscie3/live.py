@@ -10,9 +10,9 @@ Sekwencja wazenia (identyczna dla obu zrodel):
         zaczyna od nowa.
     Q — wyjscie
 
-Przycisk: GPIO 12 (pin 32) <-> przycisk <-> GND (pin 34); pull-up, aktywny LOW.
-Przycisk zasilania (osobny): GPIO 26 (pin 37) <-> przycisk <-> GND (pin 39)
-— instalacja: ./check/install_power_button.sh (dtoverlay=gpio-shutdown).
+Przycisk wagi: GPIO 12 (pin 32) <-> przycisk <-> GND (pin 34); pull-up, aktywny LOW.
+Przycisk zasilania (przycisk 1): styki <-> zlaczze PWR (J2) na Pi 5 — ON+OFF
+bez GPIO; instrukcja: ./check/install_power_button.sh
 
 OAK-D / DepthAI: jesli lsusb widzi Movidius (03e7), a live.py rzuca
 "No available devices" / "Insufficient permissions" — brak reguł udev:

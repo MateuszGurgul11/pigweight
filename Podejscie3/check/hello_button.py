@@ -1,11 +1,11 @@
 """Test fizycznego przycisku WAZENIA na GPIO 12 (pin 32).
 
-Okablowanie (wazenie):
+Okablowanie (waga / przycisk 2):
     GPIO 12 (fizyczny pin 32)  <->  przycisk  <->  GND (pin 34)
 
-Przycisk ZASILANIA to osobny przycisk:
-    GPIO 26 (fizyczny pin 37)  <->  przycisk  <->  GND (pin 39)
-    Instalacja: ./check/install_power_button.sh
+Przycisk ZASILANIA (przycisk 1) — NIE na GPIO:
+    styki przycisku  <->  dwa piny zlacza PWR (J2) na Pi 5
+    Instalacja / usuniecie starego overlay: ./check/install_power_button.sh
 
 Uruchomienie na Pi:
     python check/hello_button.py
@@ -13,7 +13,7 @@ Uruchomienie na Pi:
 Jesli 'GPIO busy':
     sudo systemctl stop pigweight-live
     pkill -f 'python.*live.py' || true
-    # potem ponownie: python check/hello_button.py
+    # jesli stary gpio-shutdown: ./check/install_power_button.sh && sudo reboot
 """
 import sys
 import time
@@ -31,7 +31,7 @@ Zatrzymaj konflikt i sprobuj ponownie:
   pkill -f 'python.*live.py' || true
   python check/hello_button.py
 
-Jesli masz stary overlay gpio-shutdown na gpio_pin=12 — zmien na 26:
+Jesli masz stary overlay gpio-shutdown — usun go:
   ./check/install_power_button.sh && sudo reboot
 """
 
@@ -48,6 +48,7 @@ except Exception as e:  # noqa: BLE001
 
 print("=== Test przycisku GPIO 12 (pin 32) — WAGA ===")
 print("Podlaczenie: pin 32 <-> przycisk <-> GND (pin 34)")
+print("Zasilanie (przycisk 1): zlaczze PWR na Pi 5 — nie ten test")
 print("Puszczony = HIGH | Nacisniety = LOW")
 print("Ctrl+C = koniec\n")
 
