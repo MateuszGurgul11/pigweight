@@ -8,10 +8,17 @@
 #   cd ~/Desktop/pigweight/Podejscie3
 #   chmod +x check/install_power_button.sh
 #   ./check/install_power_button.sh
-#   sudo reboot
+#   sudo reboot          # WYMAGANE — bez rebootu overlay NIE dziala
 #
 # Po rebootcie: krotkie nacisniecie = bezpieczne wylaczenie (KEY_POWER).
 set -euo pipefail
+
+echo "=============================================="
+echo "  UWAGA: po tej instalacji MUSISZ zrobic:"
+echo "         sudo reboot"
+echo "  Bez rebootu przycisk zasilania NIE zadziala."
+echo "=============================================="
+echo
 
 OVERLAY_LINE='dtoverlay=gpio-shutdown,gpio_pin=12,active_low=1,gpio_pull=up'
 CONFIG=""
@@ -72,5 +79,11 @@ echo "    - Pi 4: czesto to samo nacisniecie (gdy WAKE_ON_GPIO=1)."
 echo "    - Pi 5: GPIO nie budzi z halt — uzyj zlacza PWR na plytce"
 echo "      albo odlacz/podlacz zasilanie 5V."
 echo
-echo "Nastepnie:  sudo reboot"
-echo "Test: nacisnij przycisk zasilania — Pi powinien sie wylaczyc."
+echo "=============================================="
+echo "  TERAZ OBOWIAZKOWO:  sudo reboot"
+echo "  Bez tego overlay gpio-shutdown nie jest aktywny"
+echo "  i przycisk zasilania nic nie zrobi."
+echo "=============================================="
+echo
+echo "Po reboocie: nacisnij przycisk na pin 32/34 — Pi powinien sie wylaczyc."
+echo "Test sprzetu (oba przyciski):  python check/hello_buttons.py"
