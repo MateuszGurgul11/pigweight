@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Instaluje przycisk zasilania (bezpieczny shutdown) na GPIO 12.
+# Instaluje przycisk zasilania (bezpieczny shutdown) na GPIO 26.
 #
 # Okablowanie:
-#   pin 32 (GPIO 12)  <->  przycisk  <->  pin 34 (GND)
-# (osobny od przycisku wazenia: pin 37 / GPIO 26)
+#   pin 37 (GPIO 26)  <->  przycisk  <->  pin 39 (GND)
+# (osobny od przycisku wazenia: pin 32 / GPIO 12)
 #
 #   cd ~/Desktop/pigweight/Podejscie3
 #   chmod +x check/install_power_button.sh
@@ -20,7 +20,7 @@ echo "  Bez rebootu przycisk zasilania NIE zadziala."
 echo "=============================================="
 echo
 
-OVERLAY_LINE='dtoverlay=gpio-shutdown,gpio_pin=12,active_low=1,gpio_pull=up'
+OVERLAY_LINE='dtoverlay=gpio-shutdown,gpio_pin=26,active_low=1,gpio_pull=up'
 CONFIG=""
 for candidate in /boot/firmware/config.txt /boot/config.txt; do
   if [[ -f "$candidate" ]]; then
@@ -34,16 +34,21 @@ if [[ -z "$CONFIG" ]]; then
   exit 1
 fi
 
-echo "=== Przycisk zasilania (GPIO 12 / pin 32) ==="
+echo "=== Przycisk zasilania (GPIO 26 / pin 37) ==="
 echo "config: $CONFIG"
 echo
 
 if grep -qE '^dtoverlay=gpio-shutdown' "$CONFIG"; then
-  echo ">>> Juz jest linia gpio-shutdown w $CONFIG:"
+  echo ">>> Znaleziono istniejaca linie gpio-shutdown:"
   grep -E '^dtoverlay=gpio-shutdown' "$CONFIG" || true
-  echo
-  echo "Jesli gpio_pin != 12, popraw recznie na:"
-  echo "  $OVERLAY_LINE"
+  if grep -qE '^dtoverlay=gpio-shutdown,gpio_pin=26' "$CONFIG"; then
+    echo ">>> Juz gpio_pin=26 — OK."
+  else
+    echo ">>> Podmieniam na gpio_pin=26 (waga jest na GPIO 12)..."
+    sudo sed -i.bak -E 's/^dtoverlay=gpio-shutdown.*/'"$OVERLAY_LINE"'/' "$CONFIG"
+    echo ">>> Nowa linia:"
+    grep -E '^dtoverlay=gpio-shutdown' "$CONFIG" || true
+  fi
 else
   echo ">>> Dopisuje: $OVERLAY_LINE"
   echo "$OVERLAY_LINE" | sudo tee -a "$CONFIG" >/dev/null
@@ -70,10 +75,11 @@ fi
 
 echo
 echo "Okablowanie:"
-echo "  pin 32 (GPIO 12) <-> przycisk <-> pin 34 (GND)"
+echo "  ZASILANIE: pin 37 (GPIO 26) <-> przycisk <-> pin 39 (GND)"
+echo "  WAGA:      pin 32 (GPIO 12) <-> przycisk <-> pin 34 (GND)"
 echo
 echo "Zachowanie:"
-echo "  WYLACZENIE: nacisnij przycisk -> bezpieczny shutdown/halt."
+echo "  WYLACZENIE: nacisnij przycisk zasilania -> bezpieczny shutdown/halt."
 echo "  WLACZENIE:"
 echo "    - Pi 4: czesto to samo nacisniecie (gdy WAKE_ON_GPIO=1)."
 echo "    - Pi 5: GPIO nie budzi z halt — uzyj zlacza PWR na plytce"
@@ -85,5 +91,5 @@ echo "  Bez tego overlay gpio-shutdown nie jest aktywny"
 echo "  i przycisk zasilania nic nie zrobi."
 echo "=============================================="
 echo
-echo "Po reboocie: nacisnij przycisk na pin 32/34 — Pi powinien sie wylaczyc."
+echo "Po reboocie: nacisnij przycisk na pin 37/39 — Pi powinien sie wylaczyc."
 echo "Test sprzetu (oba przyciski):  python check/hello_buttons.py"

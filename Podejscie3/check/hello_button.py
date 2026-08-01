@@ -1,10 +1,10 @@
-"""Test fizycznego przycisku WAZENIA na GPIO 26 (pin 37).
+"""Test fizycznego przycisku WAZENIA na GPIO 12 (pin 32).
 
 Okablowanie (wazenie):
-    GPIO 26 (fizyczny pin 37)  <->  przycisk  <->  GND (pin 39)
+    GPIO 12 (fizyczny pin 32)  <->  przycisk  <->  GND (pin 34)
 
 Przycisk ZASILANIA to osobny przycisk:
-    GPIO 12 (fizyczny pin 32)  <->  przycisk  <->  GND (pin 34)
+    GPIO 26 (fizyczny pin 37)  <->  przycisk  <->  GND (pin 39)
     Instalacja: ./check/install_power_button.sh
 
 Uruchomienie na Pi:
@@ -21,15 +21,18 @@ import time
 import board
 import digitalio
 
-PIN = board.D26  # BCM 26 = fizyczny pin 37
+PIN = board.D12  # BCM 12 = fizyczny pin 32
 
 BUSY_HINT = """
-BLAD: GPIO busy — pin 37 (GPIO 26) jest zajety przez inny proces.
+BLAD: GPIO busy — pin 32 (GPIO 12) jest zajety przez inny proces.
 
 Zatrzymaj konflikt i sprobuj ponownie:
   sudo systemctl stop pigweight-live
   pkill -f 'python.*live.py' || true
   python check/hello_button.py
+
+Jesli masz stary overlay gpio-shutdown na gpio_pin=12 — zmien na 26:
+  ./check/install_power_button.sh && sudo reboot
 """
 
 try:
@@ -37,15 +40,14 @@ try:
     btn.direction = digitalio.Direction.INPUT
     btn.pull = digitalio.Pull.UP
 except Exception as e:  # noqa: BLE001
-    msg = str(e).lower()
-    if "busy" in msg or "GPIO busy" in str(e):
+    if "busy" in str(e).lower():
         print(BUSY_HINT.strip())
         print(f"({type(e).__name__}: {e})")
         sys.exit(1)
     raise
 
-print("=== Test przycisku GPIO 26 (pin 37) ===")
-print("Podlaczenie: pin 37 <-> przycisk <-> GND (pin 39)")
+print("=== Test przycisku GPIO 12 (pin 32) — WAGA ===")
+print("Podlaczenie: pin 32 <-> przycisk <-> GND (pin 34)")
 print("Puszczony = HIGH | Nacisniety = LOW")
 print("Ctrl+C = koniec\n")
 
@@ -73,7 +75,7 @@ except KeyboardInterrupt:
     print(f"\nKoniec. Wykryte klikniecia: {presses}")
     if presses == 0:
         print(
-            "Brak klikniec — sprawdz przewody pin 37 i GND (pin 39) "
+            "Brak klikniec — sprawdz przewody pin 32 i GND (pin 34) "
             "oraz czy przycisk zwiera styki przy nacisku."
         )
     btn.deinit()

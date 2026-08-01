@@ -1,19 +1,20 @@
 """Test obu przyciskow naraz (sprzet / okablowanie).
 
 Waga (kalibracja / start):
-    GPIO 26 (pin 37)  <->  przycisk  <->  GND (pin 39)
+    GPIO 12 (pin 32)  <->  przycisk  <->  GND (pin 34)
 
 Zasilanie (wylaczanie przez overlay — ten test tylko czyta pin):
-    GPIO 12 (pin 32)  <->  przycisk  <->  GND (pin 34)
+    GPIO 26 (pin 37)  <->  przycisk  <->  GND (pin 39)
 
 Uruchomienie:
     python check/hello_buttons.py
 
-Jesli GPIO 26 busy:
+Jesli GPIO 12 busy:
     sudo systemctl stop pigweight-live
     pkill -f 'python.*live.py' || true
+    # oraz upewnij sie, ze gpio-shutdown jest na pin 26 (nie 12)
 
-Jesli GPIO 12 busy — zwykle OK (gpio-shutdown overlay); testuj wylaczenie fizycznie.
+Jesli GPIO 26 busy — zwykle OK (gpio-shutdown overlay); testuj wylaczenie fizycznie.
 """
 import sys
 import time
@@ -22,15 +23,16 @@ import board
 import digitalio
 
 WEIGHT_BUSY = """
-BLAD: GPIO 26 (waga, pin 37) busy — zajety przez inny proces.
+BLAD: GPIO 12 (waga, pin 32) busy — zajety przez inny proces.
 
   sudo systemctl stop pigweight-live
   pkill -f 'python.*live.py' || true
+  # jesli stary overlay na gpio_pin=12: ./check/install_power_button.sh && sudo reboot
   python check/hello_buttons.py
 """
 
 try:
-    weight = digitalio.DigitalInOut(board.D26)
+    weight = digitalio.DigitalInOut(board.D12)
     weight.direction = digitalio.Direction.INPUT
     weight.pull = digitalio.Pull.UP
 except Exception as e:  # noqa: BLE001
@@ -42,24 +44,24 @@ except Exception as e:  # noqa: BLE001
 
 power = None
 try:
-    p = digitalio.DigitalInOut(board.D12)
+    p = digitalio.DigitalInOut(board.D26)
     p.direction = digitalio.Direction.INPUT
     p.pull = digitalio.Pull.UP
     power = p
-    print(">>> GPIO 12 (zasilanie): wolny — moge czytac kliki w tym tescie")
+    print(">>> GPIO 26 (zasilanie): wolny — moge czytac kliki w tym tescie")
 except Exception as e:  # noqa: BLE001
     if "busy" in str(e).lower():
         print(
-            ">>> GPIO 12 (zasilanie): zajety (prawdopodobnie gpio-shutdown) — OK.\n"
-            "    Nie testuj D12 przez Python. Nacisnij przycisk 32/34 aby wylaczyc Pi\n"
+            ">>> GPIO 26 (zasilanie): zajety (prawdopodobnie gpio-shutdown) — OK.\n"
+            "    Nie testuj D26 przez Python. Nacisnij przycisk 37/39 aby wylaczyc Pi\n"
             "    (wymaga: ./check/install_power_button.sh && sudo reboot)."
         )
     else:
-        print(f">>> GPIO 12: blad ({type(e).__name__}: {e}) — testuje tylko wage")
+        print(f">>> GPIO 26: blad ({type(e).__name__}: {e}) — testuje tylko wage")
 
 print("\n=== Test przyciskow ===")
-print("WAGA:      pin 37 (GPIO 26) <-> przycisk <-> pin 39 (GND)")
-print("ZASILANIE: pin 32 (GPIO 12) <-> przycisk <-> pin 34 (GND)")
+print("WAGA:      pin 32 (GPIO 12) <-> przycisk <-> pin 34 (GND)")
+print("ZASILANIE: pin 37 (GPIO 26) <-> przycisk <-> pin 39 (GND)")
 print("Puszczony=HIGH | Nacisniety=LOW")
 print("Ctrl+C = koniec\n")
 
@@ -92,11 +94,11 @@ try:
 except KeyboardInterrupt:
     print(f"\nKoniec. Waga: {clicks_w} klikow | Zasilanie: {clicks_p} klikow")
     if clicks_w == 0:
-        print("  Brak WAGA — sprawdz pin 37 i GND 39.")
+        print("  Brak WAGA — sprawdz pin 32 i GND 34.")
     if power is None:
         print("  Zasilanie: nie odczytywane tu (overlay) — test fizyczny shutdown.")
     elif clicks_p == 0:
-        print("  Brak ZASILANIE — sprawdz pin 32 i GND 34.")
+        print("  Brak ZASILANIE — sprawdz pin 37 i GND 39.")
     if clicks_w and (power is None or clicks_p):
         print("  Waga OK sprzetowo.")
     weight.deinit()

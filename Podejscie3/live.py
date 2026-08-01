@@ -5,13 +5,13 @@ Dwa zrodla obrazu:
     python live.py rgb_video.mp4   -> plik wideo (tylko RGB, do testow)
 
 Sekwencja wazenia (identyczna dla obu zrodel):
-    S / przycisk (GPIO 26, pin 37) — start: kalibracja skali -> pomiar
+    S / przycisk (GPIO 12, pin 32) — start: kalibracja skali -> pomiar
         przez MEASURE_DURATION_S sekund -> podsumowanie. Kolejne S/przycisk
         zaczyna od nowa.
     Q — wyjscie
 
-Przycisk: GPIO 26 (pin 37) <-> przycisk <-> GND (pin 39); pull-up, aktywny LOW.
-Przycisk zasilania (osobny): GPIO 12 (pin 32) <-> przycisk <-> GND (pin 34)
+Przycisk: GPIO 12 (pin 32) <-> przycisk <-> GND (pin 34); pull-up, aktywny LOW.
+Przycisk zasilania (osobny): GPIO 26 (pin 37) <-> przycisk <-> GND (pin 39)
 — instalacja: ./check/install_power_button.sh (dtoverlay=gpio-shutdown).
 
 OAK-D / DepthAI: jesli lsusb widzi Movidius (03e7), a live.py rzuca
@@ -65,9 +65,9 @@ STATE_RESULT = "result"
 
 WINDOW = "WagaSwin [YOLO]"
 
-# Fizyczny przycisk startu — BCM GPIO 26 = pin fizyczny 37
-# Okablowanie: pin 37 <-> przycisk <-> GND (pin 39); aktywny LOW + pull-up
-BUTTON_PIN_NAME = "D26"
+# Fizyczny przycisk startu — BCM GPIO 12 = pin fizyczny 32
+# Okablowanie: pin 32 <-> przycisk <-> GND (pin 34); aktywny LOW + pull-up
+BUTTON_PIN_NAME = "D12"
 BUTTON_DEBOUNCE_S = 0.25
 
 
@@ -96,7 +96,7 @@ class StartButton:
             self._was_active = False
             polarity = "aktywny LOW (do GND)" if self._idle_high else "aktywny HIGH"
             print(
-                f">>> Przycisk: GPIO {BUTTON_PIN_NAME} (pin 37) gotowy | "
+                f">>> Przycisk: GPIO {BUTTON_PIN_NAME} (pin 32) gotowy | "
                 f"spoczynek={'HIGH' if self._idle_high else 'LOW'} | {polarity}"
             )
             if high_n == 0:
