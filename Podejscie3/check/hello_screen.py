@@ -26,8 +26,8 @@ from PIL import Image, ImageDraw, ImageFont
 # --- inicjalizacja ekranu ---
 spi = board.SPI()
 cs = digitalio.DigitalInOut(board.CE0)    # CS  -> pin 24
-dc = digitalio.DigitalInOut(board.D24)    # DC  -> pin 18
-rst = digitalio.DigitalInOut(board.D25)   # RST -> pin 22
+dc = digitalio.DigitalInOut(board.D25)    # DC  -> pin 22
+rst = digitalio.DigitalInOut(board.D17)   # RST -> pin 11
 
 disp = ili9341.ILI9341(
     spi, cs=cs, dc=dc, rst=rst,

@@ -58,3 +58,6 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# Duze archiwa (nie pushuj na GitHub)
+*.zip

@@ -1,7 +1,11 @@
-"""Test fizycznego przycisku na GPIO 3 (pin 5).
+"""Test fizycznego przycisku WAZENIA na GPIO 26 (pin 37).
 
-Okablowanie:
-    GPIO 3 (fizyczny pin 5)  <->  przycisk  <->  GND (pin 9)
+Okablowanie (wazenie):
+    GPIO 26 (fizyczny pin 37)  <->  przycisk  <->  GND (pin 39)
+
+Przycisk ZASILANIA to osobny przycisk:
+    GPIO 12 (fizyczny pin 32)  <->  przycisk  <->  GND (pin 34)
+    Instalacja: ./check/install_power_button.sh
 
 Uruchomienie na Pi:
     python check/hello_button.py
@@ -15,14 +19,14 @@ import time
 import board
 import digitalio
 
-PIN = board.D3  # BCM 3 = fizyczny pin 5
+PIN = board.D26  # BCM 26 = fizyczny pin 37
 
 btn = digitalio.DigitalInOut(PIN)
 btn.direction = digitalio.Direction.INPUT
 btn.pull = digitalio.Pull.UP
 
-print("=== Test przycisku GPIO 3 (pin 5) ===")
-print("Podlaczenie: pin 5 <-> przycisk <-> GND (pin 9)")
+print("=== Test przycisku GPIO 26 (pin 37) ===")
+print("Podlaczenie: pin 37 <-> przycisk <-> GND (pin 39)")
 print("Puszczony = HIGH | Nacisniety = LOW")
 print("Ctrl+C = koniec\n")
 
@@ -50,7 +54,7 @@ except KeyboardInterrupt:
     print(f"\nKoniec. Wykryte klikniecia: {presses}")
     if presses == 0:
         print(
-            "Brak klikniec — sprawdz przewody pin 5 i GND (pin 9) "
+            "Brak klikniec — sprawdz przewody pin 37 i GND (pin 39) "
             "oraz czy przycisk zwiera styki przy nacisku."
         )
     btn.deinit()

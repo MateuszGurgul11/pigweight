@@ -10,6 +10,8 @@ Pi 5 + CS na CE0 (pin 24): zeby uniknac lgpio.error: 'GPIO busy',
 dodaj do /boot/firmware/config.txt linie `dtoverlay=spi0-0cs` i zrebootuj.
 Bez tego kernel trzyma CE0 jako spi0 CS0 i DigitalInOut(board.CE0) pada.
 
+Piny LCD: CS=pin24 (CE0), DC=pin22 (GPIO25 / D25), RST=pin11 (GPIO17 / D17).
+
 Test okablowania (bez reszty programu):
     python check/hello_screen.py
     python display.py
@@ -64,9 +66,9 @@ class PigDisplay:
         from adafruit_rgb_display import ili9341
 
         spi = board.SPI()
-        cs = digitalio.DigitalInOut(board.CE0)
-        dc = digitalio.DigitalInOut(board.D24)
-        rst = digitalio.DigitalInOut(board.D25)
+        cs = digitalio.DigitalInOut(board.CE0)   # CS  -> pin 24
+        dc = digitalio.DigitalInOut(board.D25)   # DC  -> pin 22
+        rst = digitalio.DigitalInOut(board.D17)  # RST -> pin 11
 
         self._disp = ili9341.ILI9341(
             spi, cs=cs, dc=dc, rst=rst,
