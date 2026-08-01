@@ -10,10 +10,12 @@ Przycisk ZASILANIA to osobny przycisk:
 Uruchomienie na Pi:
     python check/hello_button.py
 
-Bez nacisku powinno byc HIGH / puszczony.
-Po nacisnieciu — LOW / NACISNIETY (oraz licznik ++).
-Ctrl+C konczy.
+Jesli 'GPIO busy':
+    sudo systemctl stop pigweight-live
+    pkill -f 'python.*live.py' || true
+    # potem ponownie: python check/hello_button.py
 """
+import sys
 import time
 
 import board
@@ -21,9 +23,26 @@ import digitalio
 
 PIN = board.D26  # BCM 26 = fizyczny pin 37
 
-btn = digitalio.DigitalInOut(PIN)
-btn.direction = digitalio.Direction.INPUT
-btn.pull = digitalio.Pull.UP
+BUSY_HINT = """
+BLAD: GPIO busy — pin 37 (GPIO 26) jest zajety przez inny proces.
+
+Zatrzymaj konflikt i sprobuj ponownie:
+  sudo systemctl stop pigweight-live
+  pkill -f 'python.*live.py' || true
+  python check/hello_button.py
+"""
+
+try:
+    btn = digitalio.DigitalInOut(PIN)
+    btn.direction = digitalio.Direction.INPUT
+    btn.pull = digitalio.Pull.UP
+except Exception as e:  # noqa: BLE001
+    msg = str(e).lower()
+    if "busy" in msg or "GPIO busy" in str(e):
+        print(BUSY_HINT.strip())
+        print(f"({type(e).__name__}: {e})")
+        sys.exit(1)
+    raise
 
 print("=== Test przycisku GPIO 26 (pin 37) ===")
 print("Podlaczenie: pin 37 <-> przycisk <-> GND (pin 39)")
