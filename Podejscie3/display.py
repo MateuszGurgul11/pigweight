@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from PIL import Image, ImageDraw, ImageFont
 
-# Canvas portretowy (rotation=90 na natywnym 320x240)
+# Canvas portretowy (rotation=270 na natywnym 320x240)
 WIDTH, HEIGHT = 240, 320
 
 # Kolory (RGB)
@@ -59,7 +59,7 @@ def _fmt_height(height_cm: float | None) -> str:
 class PigDisplay:
     """Cienka warstwa nad ILI9341 — rysuje ekrany stanow i wynik."""
 
-    def __init__(self, baudrate: int = 24_000_000, rotation: int = 90) -> None:
+    def __init__(self, baudrate: int = 24_000_000, rotation: int = 270) -> None:
         # Import lokalny, zeby modul dalo sie zaladowac tez bez sprzetu
         import board
         import digitalio
@@ -73,7 +73,7 @@ class PigDisplay:
         self._disp = ili9341.ILI9341(
             spi, cs=cs, dc=dc, rst=rst,
             width=320, height=240,          # natywny raster panelu (poziomy)
-            baudrate=baudrate, rotation=rotation,  # 90 = obraz portretowy 240x320
+            baudrate=baudrate, rotation=rotation,  # 270 = portret, obrócony o 180 vs 90
         )
         self._f_big = _font(36)
         self._f_title = _font(18)

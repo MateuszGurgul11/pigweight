@@ -32,10 +32,10 @@ rst = digitalio.DigitalInOut(board.D17)   # RST -> pin 11
 disp = ili9341.ILI9341(
     spi, cs=cs, dc=dc, rst=rst,
     width=320, height=240,          # natywny raster panelu (poziomy)
-    baudrate=24_000_000, rotation=90,  # 90 = obraz portretowy 240x320
+    baudrate=24_000_000, rotation=270,  # 270 = portret, obrócony o 180 vs 90
 )
 
-WIDTH, HEIGHT = 240, 320  # canvas portretowy (po rotation=90)
+WIDTH, HEIGHT = 240, 320  # canvas portretowy (po rotation=270)
 
 # --- rysowanie ---
 img = Image.new("RGB", (WIDTH, HEIGHT), (0, 0, 0))  # czarne tlo
