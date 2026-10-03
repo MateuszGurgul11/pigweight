@@ -51,7 +51,7 @@ if [[ -f "${HOME:-}/.Xauthority" ]]; then
   export XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}"
 fi
 
-# Po boocie daj czas na USB (OAK-D), SPI i pulpit
+# Po boocie daj czas na USB (OAK-D) i pulpit
 if [[ "${PIGWEIGHT_BOOT_DELAY:-}" == "1" ]]; then
   echo ">>> start_live: czekam 20 s na USB/DISPLAY..."
   sleep 20
@@ -71,6 +71,12 @@ if [[ "${PIGWEIGHT_BOOT_DELAY:-}" == "1" ]]; then
     echo ">>>             uruchom: $ROOT/check/install_oak_udev.sh"
   fi
 fi
+
+if [[ ! -f "$ROOT/models/pig_seg_best.pt" ]]; then
+  echo ">>> start_live: UWAGA — brak $ROOT/models/pig_seg_best.pt (wazenie po S padnie)"
+fi
+
+export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-xcb}"
 
 echo ">>> start_live: $PYTHON $ROOT/live.py"
 exec "$PYTHON" -u "$ROOT/live.py"

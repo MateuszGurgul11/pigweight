@@ -1,6 +1,6 @@
 [Unit]
 Description=PigWeight live.py — waga swin (OAK-D + monitor 7")
-# Czekaj na pulpit — OpenCV/DISPLAY i czesto USB potrzebuja sesji graficznej
+# Czekaj na pulpit — OpenCV/DISPLAY i USB (OAK-D)
 After=graphical.target network-online.target
 Wants=network-online.target
 
@@ -12,6 +12,8 @@ Environment=PIGWEIGHT_BOOT_DELAY=1
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=/REPLACE_HOME/.Xauthority
 Environment=HOME=/REPLACE_HOME
+# OpenCV/Qt na Pi OS Bookworm (Wayland) — wymus X11/Xwayland
+Environment=QT_QPA_PLATFORM=xcb
 ExecStart=/bin/bash /REPLACE_ROOT/start_live.sh
 Restart=on-failure
 RestartSec=15

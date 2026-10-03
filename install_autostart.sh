@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
 # Instaluje autostart live.py po wlaczeniu Raspberry Pi.
 #
-# Pliki maja zostac W TYM folderze (np. ~/Desktop/pigweight).
-# Nie przenosisz ich do /etc — instalator sam tworzy usluge systemd
-# wskazujaca na ta sciezke.
-#
+# Uruchom Z folderu projektu (tam gdzie jest live.py), np.:
 #   cd ~/Desktop/pigweight
 #   chmod +x start_live.sh install_autostart.sh
 #   ./install_autostart.sh
@@ -22,25 +19,40 @@ SERVICE_NAME="pigweight-live"
 UNIT_SRC="$ROOT/pigweight-live.service"
 UNIT_DST="/etc/systemd/system/${SERVICE_NAME}.service"
 USER_NAME="$(id -un)"
-HOME_DIR="$(getent passwd "$USER_NAME" | cut -d: -f6)"
+
+# getent bywa niedostepny (np. macOS) — nie wywalaj skryptu przez set -e
+HOME_DIR="${HOME:-}"
+if command -v getent >/dev/null 2>&1; then
+  HOME_DIR="$(getent passwd "$USER_NAME" 2>/dev/null | cut -d: -f6 || true)"
+fi
 HOME_DIR="${HOME_DIR:-$HOME}"
+HOME_DIR="${HOME_DIR:-/home/$USER_NAME}"
 
 echo "=========================================="
 echo "  PigWeight — instalacja autostartu"
 echo "=========================================="
-echo "Folder projektu (tu maja byc skrypty):"
+echo "Folder projektu:"
 echo "  $ROOT"
 echo "Uzytkownik: $USER_NAME"
 echo "HOME:       $HOME_DIR"
 echo
 
 if [[ ! -f "$ROOT/live.py" ]]; then
-  echo "BLAD: w $ROOT nie ma live.py — uruchom instalator z folderu projektu"
+  echo "BLAD: w $ROOT nie ma live.py"
+  echo "      Uruchom:  cd ~/Desktop/pigweight && ./install_autostart.sh"
+  echo "      (nie z Podejscie3 — ten folder juz nie istnieje)"
   exit 1
 fi
 if [[ ! -f "$UNIT_SRC" ]]; then
   echo "BLAD: brak $UNIT_SRC"
   exit 1
+fi
+if [[ ! -x "$ROOT/.venv/bin/python" && ! -x "$ROOT/venv/bin/python" ]]; then
+  echo "UWAGA: brak .venv w $ROOT — autostart moze uzyc systemowego python3"
+fi
+if [[ ! -f "$ROOT/models/pig_seg_best.pt" ]]; then
+  echo "UWAGA: brak models/pig_seg_best.pt — wazenie padnie po S/przycisku"
+  echo "      Skopiuj model do $ROOT/models/"
 fi
 
 chmod +x "$ROOT/start_live.sh" "$ROOT/install_autostart.sh"
@@ -54,7 +66,16 @@ sed \
 
 # User= + Group= zaraz po [Service]
 if ! grep -q "^User=" "$TMP"; then
-  sed -i "/^\[Service\]/a User=$USER_NAME\nGroup=$USER_NAME" "$TMP"
+  if sed --version >/dev/null 2>&1; then
+    # GNU sed (Pi)
+    sed -i "/^\[Service\]/a User=$USER_NAME\nGroup=$USER_NAME" "$TMP"
+  else
+    # BSD sed
+    sed -i '' "/^\[Service\]/a\\
+User=$USER_NAME\\
+Group=$USER_NAME
+" "$TMP"
+  fi
 fi
 
 echo ">>> Instaluje usluge systemd: $UNIT_DST"
@@ -66,10 +87,9 @@ rm -f "$TMP"
 
 sudo systemctl daemon-reload
 sudo systemctl enable "$SERVICE_NAME"
-# Nie restartuj teraz na sile jesli brak DISPLAY — enable wystarczy do bootu
 sudo systemctl stop "$SERVICE_NAME" 2>/dev/null || true
 
-# --- 2) autostart pulpitu (zapas — dziala po zalogowaniu do GUI) ---
+# --- 2) autostart pulpitu (zapas — po zalogowaniu do GUI) ---
 AUTOSTART_DIR="$HOME_DIR/.config/autostart"
 mkdir -p "$AUTOSTART_DIR"
 DESKTOP_FILE="$AUTOSTART_DIR/pigweight-live.desktop"
@@ -77,19 +97,7 @@ cat > "$DESKTOP_FILE" <<EOF
 [Desktop Entry]
 Type=Application
 Name=PigWeight live
-Comment=Uruchamia live.py po zalogowaniu
-Exec=/bin/bash $ROOT/start_live.sh
-Path=$ROOT
-Terminal=false
-X-GNOME-Autostart-enabled=true
-EOF
-# PIGWEIGHT_BOOT_DELAY dla .desktop tez
-# (nadpisz Exec z env)
-cat > "$DESKTOP_FILE" <<EOF
-[Desktop Entry]
-Type=Application
-Name=PigWeight live
-Comment=Uruchamia live.py po zalogowaniu
+Comment=Uruchamia live.py po zalogowaniu (monitor 7")
 Exec=/usr/bin/env PIGWEIGHT_BOOT_DELAY=1 /bin/bash $ROOT/start_live.sh
 Path=$ROOT
 Terminal=false
@@ -103,7 +111,9 @@ echo "Sprawdzenie enable:"
 systemctl is-enabled "$SERVICE_NAME" || true
 echo
 echo "Gotowe. Zrob:  sudo reboot"
-echo "Po restarcie sprawdz log:"
+echo "Po restarcie:"
 echo "  tail -f $ROOT/live_autostart.log"
-echo "albo:"
 echo "  journalctl -u $SERVICE_NAME -b --no-pager"
+echo
+echo "Reczny restart teraz (gdy jest pulpit):"
+echo "  sudo systemctl restart $SERVICE_NAME"
