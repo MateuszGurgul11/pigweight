@@ -27,6 +27,13 @@ _yolo_model = None
 def _get_model():
     global _yolo_model
     if _yolo_model is None:
+        if not MODEL_PATH.is_file():
+            raise FileNotFoundError(
+                f"Brak modelu YOLO: {MODEL_PATH}\n"
+                "Plik *.pt nie jest w git — skopiuj go na Pi, np.:\n"
+                "  scp models/pig_seg_best.pt admin@IP:~/Desktop/pigweight/models/\n"
+                "albo z Pendrive / Samba do folderu models/"
+            )
         from ultralytics import YOLO
         print(f"Ladowanie modelu YOLO: {MODEL_PATH}")
         _yolo_model = YOLO(str(MODEL_PATH))

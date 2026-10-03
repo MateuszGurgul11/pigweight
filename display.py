@@ -59,23 +59,21 @@ def rotate_camera_90(frame: np.ndarray) -> np.ndarray:
 
 
 def fit_camera(frame: np.ndarray) -> np.ndarray:
-    """Kamera (juz po obrocie) wypelnia obszar CAM_H x SCREEN_W (cover + crop)."""
+    """Kamera (po obrocie) — caly kadr widoczny (contain), bez ucinania gory/dolu."""
     canvas = np.zeros((CAM_H, SCREEN_W, 3), dtype=np.uint8)
     fh, fw = frame.shape[:2]
     if fw < 1 or fh < 1:
         return canvas
 
-    # cover: wypelnij caly obszar, przytnij nadmiar
-    scale = max(SCREEN_W / float(fw), CAM_H / float(fh))
+    # contain: miesci sie caly obraz, ewentualnie czarne paski po bokach
+    scale = min(SCREEN_W / float(fw), CAM_H / float(fh))
     new_w = max(1, int(round(fw * scale)))
     new_h = max(1, int(round(fh * scale)))
     resized = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
-    x0 = max(0, (new_w - SCREEN_W) // 2)
-    y0 = max(0, (new_h - CAM_H) // 2)
-    cropped = resized[y0 : y0 + CAM_H, x0 : x0 + SCREEN_W]
-    ch, cw = cropped.shape[:2]
-    canvas[:ch, :cw] = cropped
+    x0 = (SCREEN_W - new_w) // 2
+    y0 = (CAM_H - new_h) // 2  # wycentrowane w pionie; nic nie ucinamy
+    canvas[y0 : y0 + new_h, x0 : x0 + new_w] = resized
     return canvas
 
 
