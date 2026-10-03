@@ -5,9 +5,9 @@ Dwa zrodla obrazu:
     python live.py rgb_video.mp4   -> plik wideo (tylko RGB, do testow)
 
 UI: monitor 7" 1024x600 w pionie (= 600x1024) — OpenCV fullscreen.
-Gora: kamera | Dol: panel danych (jak dawny LCD).
+Wiekszosc: kamera obrocona 90°. Dol: waski pasek (wysokosc + waga).
 Orientacja OS: Screen Configuration -> Right/Left.
-Opcjonalnie: PIGWEIGHT_ROTATE=90  PIGWEIGHT_FULLSCREEN=0|1
+Opcjonalnie: PIGWEIGHT_ROTATE=90|270 (caly ekran) jesli OS nie jest w pionie.
 
 Sekwencja wazenia (identyczna dla obu zrodel):
     S / przycisk (GPIO 12, pin 32) — start: kalibracja skali -> pomiar
@@ -244,6 +244,7 @@ class WeighingSession:
         self.calib_msg = ""
         self.last_print = 0.0
         self._ui_remaining = 0.0
+        self.live_weight_kg: float | None = None
         # Wysokosc kamery nad podloga (z glebi) — aktualizowana caly czas
         self.live_height_cm: float | None = (
             float(self.cal["height_cm"]) if not self.can_recalibrate else None
@@ -254,6 +255,7 @@ class WeighingSession:
         self.session_weights = []
         self.floor_samples = []
         self.result = None
+        self.live_weight_kg = None
         self.coeffs = load_coeff()  # swieze wspolczynniki (mogly zmienic sie w app.py)
         self.state = STATE_CALIBRATING
         self.state_started = time.time()
@@ -351,37 +353,29 @@ class WeighingSession:
             if best is not None:
                 raw_kg = estimate_weight(best, self.coeffs)
                 smooth_kg = self.smoother.add(raw_kg)
+                self.live_weight_kg = smooth_kg
                 if self.state == STATE_MEASURING:
                     self.session_weights.append(smooth_kg)
 
                 cv2.line(frame, best["axis_p1"], best["axis_p2"], (0, 0, 255), 2)
                 cv2.line(frame, best["width_p1"], best["width_p2"], (255, 0, 0), 2)
 
-                cx, cy = best["center"]
-                label = f"{smooth_kg:.1f} kg"
-                (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 1.4, 3)
-                cv2.rectangle(frame, (cx-tw//2-8, cy-th-12), (cx+tw//2+8, cy+10), (0, 0, 0), -1)
-                cv2.putText(frame, label, (cx-tw//2, cy), cv2.FONT_HERSHEY_SIMPLEX, 1.4, (0, 255, 255), 3, cv2.LINE_AA)
-
                 if now - self.last_print >= 1.0:
                     print(f"Waga: {smooth_kg:.1f} kg | L={best['length_cm']}cm W={best['width_cm']}cm | swinie={len(all_pigs)} [{source}]")
                     self.last_print = now
-            else:
-                msg = f"Brak swini [{source}]"
-                cv2.putText(frame, msg, (12, 36), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 3, cv2.LINE_AA)
-                cv2.putText(frame, msg, (12, 36), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2, cv2.LINE_AA)
+
+        if self.state == STATE_RESULT and self.result is not None:
+            self.live_weight_kg = float(self.result["mean"])
 
     def compose_screen(self, frame: np.ndarray) -> np.ndarray:
-        """Kamera + panel LCD na dole → 600x1024 (opcjonalnie obrocone)."""
+        """Kamera 90° + waski pasek wysokosc/waga → 600x1024."""
         screen = compose_portrait(
             frame,
             self.state,
             height_cm=self.live_height_cm,
+            weight_kg=self.live_weight_kg,
             remaining_s=self._ui_remaining,
-            samples=len(self.floor_samples),
-            measure_count=len(self.session_weights),
             result=self.result,
-            cal_height_cm=float(self.cal["height_cm"]),
         )
         return frame_for_monitor(screen)
 

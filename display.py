@@ -1,10 +1,10 @@
 """UI na monitor 7\" 1024x600 ustawiony pionowo (= 600x1024).
 
 Uklad:
-  [ podglad kamery — gora ]
-  [ panel danych jak dawny LCD — dol ]
+  [ podglad kamery obrocony 90° — wiekszosc ekranu ]
+  [ waski pasek: wysokosc + waga ]
 
-Bez ILI9341 SPI — rysowanie OpenCV, live.py robi imshow fullscreen.
+Bez ILI9341 SPI — rysowanie OpenCV.
 """
 from __future__ import annotations
 
@@ -15,22 +15,31 @@ import numpy as np
 SCREEN_W = 600
 SCREEN_H = 1024
 
-# Kolory BGR (OpenCV)
+# Waski pasek statusu na dole
+BAR_H = 110
+CAM_H = SCREEN_H - BAR_H
+
+# Kolory BGR
 BG = (0, 0, 0)
+BAR_BG = (22, 22, 22)
 WHITE = (255, 255, 255)
-GREY = (150, 150, 150)
-GREEN = (90, 220, 0)
-YELLOW = (0, 210, 255)
+GREY = (160, 160, 160)
 CYAN = (255, 200, 0)
+YELLOW = (0, 255, 255)
+GREEN = (90, 220, 0)
 RED = (70, 70, 255)
-PANEL_BG = (18, 18, 18)
-HEADER_BG = (30, 60, 20)
 
 
 def _fmt_height(height_cm: float | None) -> str:
     if height_cm is None:
         return "---"
     return f"{height_cm:.0f} cm"
+
+
+def _fmt_weight(kg: float | None) -> str:
+    if kg is None:
+        return "---"
+    return f"{kg:.1f} kg"
 
 
 def _put(
@@ -44,102 +53,61 @@ def _put(
     cv2.putText(img, text, org, cv2.FONT_HERSHEY_SIMPLEX, scale, color, thick, cv2.LINE_AA)
 
 
-def _centered(
-    img: np.ndarray,
-    text: str,
-    y: int,
-    scale: float,
-    color: tuple[int, int, int],
-    thick: int = 2,
-) -> None:
-    (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, thick)
-    x = max(0, (img.shape[1] - tw) // 2)
-    _put(img, text, (x, y), scale, color, thick)
+def rotate_camera_90(frame: np.ndarray) -> np.ndarray:
+    """Obrot podgladu o 90° w prawo (dostosowanie do pionowego monitora)."""
+    return cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
 
 
-def fit_camera_top(frame: np.ndarray, area_h: int) -> np.ndarray:
-    """Skaluje klatke do szerokosci SCREEN_W, wstawia w pas o wysokosci area_h (czarne paski)."""
-    canvas = np.zeros((area_h, SCREEN_W, 3), dtype=np.uint8)
+def fit_camera(frame: np.ndarray) -> np.ndarray:
+    """Kamera (juz po obrocie) wypelnia obszar CAM_H x SCREEN_W (cover + crop)."""
+    canvas = np.zeros((CAM_H, SCREEN_W, 3), dtype=np.uint8)
     fh, fw = frame.shape[:2]
     if fw < 1 or fh < 1:
         return canvas
-    scale = SCREEN_W / float(fw)
-    new_w = SCREEN_W
-    new_h = int(round(fh * scale))
-    if new_h > area_h:
-        scale = area_h / float(fh)
-        new_h = area_h
-        new_w = int(round(fw * scale))
+
+    # cover: wypelnij caly obszar, przytnij nadmiar
+    scale = max(SCREEN_W / float(fw), CAM_H / float(fh))
+    new_w = max(1, int(round(fw * scale)))
+    new_h = max(1, int(round(fh * scale)))
     resized = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
-    x0 = (SCREEN_W - new_w) // 2
-    y0 = (area_h - new_h) // 2
-    canvas[y0 : y0 + new_h, x0 : x0 + new_w] = resized
+
+    x0 = max(0, (new_w - SCREEN_W) // 2)
+    y0 = max(0, (new_h - CAM_H) // 2)
+    cropped = resized[y0 : y0 + CAM_H, x0 : x0 + SCREEN_W]
+    ch, cw = cropped.shape[:2]
+    canvas[:ch, :cw] = cropped
     return canvas
 
 
-def render_panel(
-    state: str,
+def render_bar(
     *,
     height_cm: float | None = None,
+    weight_kg: float | None = None,
+    state: str = "idle",
     remaining_s: float = 0.0,
-    samples: int = 0,
-    measure_count: int = 0,
-    result: dict | None = None,
-    cal_height_cm: float | None = None,
-    panel_h: int,
 ) -> np.ndarray:
-    """Dolny panel — odpowiednik ekranow dawnego LCD."""
-    img = np.full((panel_h, SCREEN_W, 3), PANEL_BG, dtype=np.uint8)
-    mid = panel_h // 2
+    """Maly pasek: wysokosc + waga (+ krotki status fazy)."""
+    img = np.full((BAR_H, SCREEN_W, 3), BAR_BG, dtype=np.uint8)
+    cv2.line(img, (0, 0), (SCREEN_W, 0), (70, 70, 70), 2)
 
-    if state == "idle":
-        _centered(img, "WAGA SWIN", 48, 1.1, WHITE, 2)
-        _centered(img, "Wysokosc", mid - 70, 0.8, GREY, 2)
-        _centered(img, _fmt_height(height_cm), mid - 10, 2.2, CYAN, 3)
-        _centered(img, "Nacisnij S / przycisk", mid + 70, 0.75, GREY, 2)
-        _centered(img, "aby rozpoczac wazenie", mid + 110, 0.75, GREY, 2)
+    # Lewa: wysokosc
+    _put(img, "WYS.", (16, 38), 0.55, GREY, 1)
+    _put(img, _fmt_height(height_cm), (16, 82), 1.15, CYAN, 2)
 
-    elif state == "calibrating":
-        _centered(img, "KALIBRACJA SKALI", 48, 1.0, CYAN, 2)
-        _centered(img, f"{remaining_s:.1f} s", mid - 20, 2.4, WHITE, 3)
-        _centered(img, f"probki: {samples}", mid + 60, 0.9, GREY, 2)
+    # Srodek / prawa: waga
+    wtxt = _fmt_weight(weight_kg)
+    (tw, _), _ = cv2.getTextSize(wtxt, cv2.FONT_HERSHEY_SIMPLEX, 1.5, 3)
+    _put(img, "WAGA", (SCREEN_W - tw - 16, 38), 0.55, GREY, 1)
+    _put(img, wtxt, (SCREEN_W - tw - 16, 82), 1.5, YELLOW, 3)
 
+    # Krotki status fazy na srodku (bez instrukcji klikania)
+    if state == "calibrating":
+        _put(img, f"kalibr. {remaining_s:.0f}s", (SCREEN_W // 2 - 70, 38), 0.55, CYAN, 1)
     elif state == "measuring":
-        _centered(img, "WAZENIE...", 48, 1.1, GREEN, 2)
-        _centered(img, f"{remaining_s:.1f} s", mid - 20, 2.4, WHITE, 3)
-        _centered(img, f"pomiary: {measure_count}", mid + 60, 0.9, GREY, 2)
+        _put(img, f"pomiar {remaining_s:.0f}s", (SCREEN_W // 2 - 70, 38), 0.55, GREEN, 1)
+    elif state == "result" and weight_kg is None:
+        _put(img, "brak pomiaru", (SCREEN_W // 2 - 70, 38), 0.55, RED, 1)
 
-    elif state == "result":
-        if result is None:
-            _centered(img, "BRAK POMIAROW", mid - 40, 1.1, RED, 2)
-            _centered(img, "nie wykryto swini", mid + 20, 0.8, GREY, 2)
-            _centered(img, "Nacisnij S ponownie", mid + 70, 0.75, GREY, 2)
-        else:
-            cv2.rectangle(img, (0, 0), (SCREEN_W, 44), HEADER_BG, -1)
-            _centered(img, "WYNIK WAZENIA", 32, 0.95, GREEN, 2)
-            _centered(img, f"{result['mean']:.1f} kg", 110, 2.6, WHITE, 4)
-
-            rows = [
-                ("Mediana", f"{result['median']:.1f} kg", CYAN),
-                ("Min", f"{result['min']:.1f} kg", YELLOW),
-                ("Max", f"{result['max']:.1f} kg", YELLOW),
-                ("Std", f"{result['std']:.1f} kg", GREY),
-            ]
-            if cal_height_cm is not None:
-                rows.append(("Kalibr.", f"{cal_height_cm:.0f} cm", GREY))
-            y = 160
-            for label, value, color in rows:
-                _put(img, label, (24, y), 0.75, GREY, 2)
-                (vw, _), _ = cv2.getTextSize(value, cv2.FONT_HERSHEY_SIMPLEX, 0.75, 2)
-                _put(img, value, (SCREEN_W - 24 - vw, y), 0.75, color, 2)
-                y += 42
-            _centered(img, f"{result['n']} pom. | S = ponownie", panel_h - 70, 0.7, GREY, 2)
-
-    else:
-        _centered(img, state.upper(), mid, 1.0, WHITE, 2)
-
-    # Pasek wysokosci zawsze na dole panelu
-    _centered(img, f"Wysokosc: {_fmt_height(height_cm)}", panel_h - 28, 0.7, CYAN, 2)
     return img
 
 
@@ -148,27 +116,28 @@ def compose_portrait(
     state: str,
     *,
     height_cm: float | None = None,
+    weight_kg: float | None = None,
     remaining_s: float = 0.0,
-    samples: int = 0,
+    samples: int = 0,  # zachowane dla kompatybilnosci wywolania
     measure_count: int = 0,
     result: dict | None = None,
     cal_height_cm: float | None = None,
-    camera_ratio: float = 0.38,
+    camera_ratio: float = 0.0,  # nieuzywane — kamera zawsze CAM_H
 ) -> np.ndarray:
-    """Pelny ekran 600x1024: kamera + panel LCD na dole."""
-    cam_h = max(200, int(SCREEN_H * camera_ratio))
-    panel_h = SCREEN_H - cam_h
-    top = fit_camera_top(camera_frame, cam_h)
-    panel = render_panel(
-        state,
+    """Pelny ekran 600x1024: kamera 90° + pasek wysokosc/waga."""
+    _ = samples, measure_count, cal_height_cm, camera_ratio
+
+    # Waga do paska: wynik sesji albo biezacy odczyt
+    kg = weight_kg
+    if kg is None and result is not None:
+        kg = float(result.get("mean", result.get("median", 0.0)))
+
+    rotated = rotate_camera_90(camera_frame)
+    top = fit_camera(rotated)
+    bar = render_bar(
         height_cm=height_cm,
+        weight_kg=kg,
+        state=state,
         remaining_s=remaining_s,
-        samples=samples,
-        measure_count=measure_count,
-        result=result,
-        cal_height_cm=cal_height_cm,
-        panel_h=panel_h,
     )
-    # cienka linia rozdzielajaca
-    cv2.line(panel, (0, 0), (SCREEN_W, 0), (60, 60, 60), 2)
-    return np.vstack([top, panel])
+    return np.vstack([top, bar])
