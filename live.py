@@ -4,6 +4,11 @@ Dwa zrodla obrazu:
     python live.py                 -> kamera OAK-D S2 (RGB + glebia)
     python live.py rgb_video.mp4   -> plik wideo (tylko RGB, do testow)
 
+UI: monitor 7" 1024x600 w pionie (= 600x1024) — OpenCV fullscreen.
+Gora: kamera | Dol: panel danych (jak dawny LCD).
+Orientacja OS: Screen Configuration -> Right/Left.
+Opcjonalnie: PIGWEIGHT_ROTATE=90  PIGWEIGHT_FULLSCREEN=0|1
+
 Sekwencja wazenia (identyczna dla obu zrodel):
     S / przycisk (GPIO 12, pin 32) — start: kalibracja skali -> pomiar
         przez MEASURE_DURATION_S sekund -> podsumowanie. Kolejne S/przycisk
@@ -21,11 +26,11 @@ potem odlacz/podlacz USB kamery.
 
 Kalibracja skali odbywa sie na poczatku kazdej sekwencji (nie ciagle):
 podloga = najdalsza plaszczyzna w kadrze, wiec pomiar dziala nawet gdy
-swinia czesciowo zaslania widok. Strumien glebi jest maly (640x400),
-zeby nie obciazac Raspberry Pi. W trybie wideo nie ma glebi — uzywana jest
-zapisana skala z calibration.json.
+swinia czesciowo zaslania widok. Strumien RGB 1280x720 + glebia 640x400.
+W trybie wideo nie ma glebi — uzywana jest zapisana skala z calibration.json.
 """
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -34,20 +39,22 @@ import cv2
 import numpy as np
 
 from detector import detect_best_pig, estimate_weight, WeightSmoother
-
-try:
-    from display import init_display
-except Exception as _e:  # brak Pillow/modulu -> dziala bez ekranu
-    print(f">>> ILI9341: modul display niedostepny ({_e}) — bez wyswietlacza")
-    def init_display():
-        return None
+from display import SCREEN_H, SCREEN_W, compose_portrait
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 CALIB_PATH = SCRIPT_DIR / "calibration.json"
 COEFF_PATH = SCRIPT_DIR / "weight_coeff.json"
 
-RGB_W, RGB_H = 1920, 1080
+# 1280x720 — lzej na Pi 5 niz 1080p
+RGB_W, RGB_H = 1280, 720
 DEPTH_W, DEPTH_H = 640, 400
+
+# Monitor 7" 1024x600 pionowo → canvas 600x1024
+FULLSCREEN = os.environ.get("PIGWEIGHT_FULLSCREEN", "1") != "0"
+try:
+    MONITOR_ROTATE = int(os.environ.get("PIGWEIGHT_ROTATE", "0"))
+except ValueError:
+    MONITOR_ROTATE = 0
 
 # Czas trwania faz sekwencji wazenia [s] — do wyregulowania (3 lub 5 s)
 CALIBRATE_DURATION_S = 1.0
@@ -69,6 +76,29 @@ WINDOW = "WagaSwin [YOLO]"
 # Okablowanie: pin 32 <-> przycisk <-> GND (pin 34); aktywny LOW + pull-up
 BUTTON_PIN_NAME = "D12"
 BUTTON_DEBOUNCE_S = 0.25
+
+
+def setup_monitor_window() -> None:
+    """Okno OpenCV na monitor 7\" pionowo (600x1024)."""
+    cv2.namedWindow(WINDOW, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(WINDOW, SCREEN_W, SCREEN_H)
+    if FULLSCREEN:
+        cv2.setWindowProperty(WINDOW, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+    print(
+        f">>> Monitor: {SCREEN_W}x{SCREEN_H} (7\" 1024x600 pion) | "
+        f"fullscreen={FULLSCREEN} | rotate={MONITOR_ROTATE}"
+    )
+
+
+def frame_for_monitor(frame: np.ndarray) -> np.ndarray:
+    """Opcjonalny obrot calego canvasu (gdy OS zostaje w landscape)."""
+    if MONITOR_ROTATE == 90:
+        return cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+    if MONITOR_ROTATE == 270:
+        return cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    if MONITOR_ROTATE == 180:
+        return cv2.rotate(frame, cv2.ROTATE_180)
+    return frame
 
 
 class StartButton:
@@ -191,24 +221,19 @@ def summarize_weights(weights: list[float]) -> dict | None:
     }
 
 
-def draw_status(frame: np.ndarray, lines: list[str], color: tuple[int, int, int]) -> None:
-    for i, txt in enumerate(lines):
-        y = 70 + i * 34
-        cv2.putText(frame, txt, (12, y), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 0), 5, cv2.LINE_AA)
-        cv2.putText(frame, txt, (12, y), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2, cv2.LINE_AA)
-
-
 class WeighingSession:
     """Maszyna stanow sekwencji wazenia — wspolna dla kamery i wideo."""
 
-    def __init__(self, fx: float | None, display=None) -> None:
+    def __init__(self, fx: float | None) -> None:
         self.cal = load_calibration()
         self.coeffs = load_coeff()
-        self.scale = float(self.cal["scale_cm_per_px"])
-        # fx z kamery pozwala przeliczyc skale z pomiaru podlogi; w trybie
-        # wideo fx=None -> brak rekalibracji, uzywamy zapisanej skali.
+        # fx z kamery (przy RGB_W x RGB_H) — skala z height/fx
         self.fx = fx
         self.can_recalibrate = fx is not None
+        if fx is not None:
+            self.scale = float(self.cal["height_cm"]) / fx
+        else:
+            self.scale = float(self.cal["scale_cm_per_px"])
 
         self.smoother = WeightSmoother(window=30, sigma=2.0)
         self.state = STATE_IDLE
@@ -218,16 +243,11 @@ class WeighingSession:
         self.result: dict | None = None
         self.calib_msg = ""
         self.last_print = 0.0
+        self._ui_remaining = 0.0
         # Wysokosc kamery nad podloga (z glebi) — aktualizowana caly czas
         self.live_height_cm: float | None = (
             float(self.cal["height_cm"]) if not self.can_recalibrate else None
         )
-
-        # Ekran ILI9341 (moze byc None — wtedy tylko okno OpenCV)
-        self.display = display
-        self._disp_state: str | None = None
-        self._disp_last = 0.0
-        self._disp_height_shown: float | None = None
 
     def start(self) -> None:
         self.smoother.clear()
@@ -273,44 +293,6 @@ class WeighingSession:
         self.calib_msg = f"podloga {new_height:.1f}cm, skala {self.scale:.6f} cm/px"
         print(f">>> Kalibracja OK: {self.calib_msg} ({len(self.floor_samples)} probek)")
 
-    def _refresh_display(self, elapsed: float) -> None:
-        """Odswieza ILI9341. Stan + wysokosc na zywo (~2x/s w idle)."""
-        if self.display is None:
-            return
-        now = time.time()
-        h = self.live_height_cm
-        changed = self.state != self._disp_state
-        height_tick = now - self._disp_last >= 0.5
-
-        if self.state == STATE_IDLE:
-            if changed or height_tick:
-                self.display.show_idle(h)
-                self._disp_last = now
-                self._disp_height_shown = h
-        elif self.state == STATE_CALIBRATING:
-            if changed or now - self._disp_last >= 0.2:
-                remaining = max(0.0, CALIBRATE_DURATION_S - elapsed)
-                self.display.show_calibrating(remaining, len(self.floor_samples), h)
-                self._disp_last = now
-                self._disp_height_shown = h
-        elif self.state == STATE_MEASURING:
-            if changed or now - self._disp_last >= 0.2:
-                remaining = max(0.0, MEASURE_DURATION_S - elapsed)
-                self.display.show_measuring(remaining, len(self.session_weights), h)
-                self._disp_last = now
-                self._disp_height_shown = h
-        elif self.state == STATE_RESULT:
-            if changed or height_tick:
-                if self.result is None:
-                    self.display.show_no_pig(h)
-                else:
-                    self.display.show_result(
-                        self.result, float(self.cal["height_cm"]), live_height_cm=h,
-                    )
-                self._disp_last = now
-                self._disp_height_shown = h
-        self._disp_state = self.state
-
     def update(self, frame: np.ndarray, depth_frame: np.ndarray | None = None) -> None:
         """Przetwarza jedna klatke: przejscia stanow, detekcja, rysowanie na frame."""
         now = time.time()
@@ -348,6 +330,14 @@ class WeighingSession:
                 print("=" * 50)
                 print("Nacisnij S / przycisk aby zwazyc ponownie.\n")
 
+        # Pozostaly czas fazy — do panelu na dole ekranu
+        if self.state == STATE_CALIBRATING:
+            self._ui_remaining = max(0.0, CALIBRATE_DURATION_S - elapsed)
+        elif self.state == STATE_MEASURING:
+            self._ui_remaining = max(0.0, MEASURE_DURATION_S - elapsed)
+        else:
+            self._ui_remaining = 0.0
+
         detecting = self.state in (STATE_CALIBRATING, STATE_MEASURING)
 
         if detecting:
@@ -369,62 +359,31 @@ class WeighingSession:
 
                 cx, cy = best["center"]
                 label = f"{smooth_kg:.1f} kg"
-                (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 1.8, 4)
-                cv2.rectangle(frame, (cx-tw//2-10, cy-th-16), (cx+tw//2+10, cy+12), (0, 0, 0), -1)
-                cv2.putText(frame, label, (cx-tw//2, cy), cv2.FONT_HERSHEY_SIMPLEX, 1.8, (0, 255, 255), 4, cv2.LINE_AA)
-
-                dims = f"[{source.upper()}] L={best['length_cm']}cm  W={best['width_cm']}cm  A={best['area_cm2']}cm2  Swinie:{len(all_pigs)}"
-                cv2.putText(frame, dims, (12, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 3, cv2.LINE_AA)
-                cv2.putText(frame, dims, (12, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2, cv2.LINE_AA)
+                (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 1.4, 3)
+                cv2.rectangle(frame, (cx-tw//2-8, cy-th-12), (cx+tw//2+8, cy+10), (0, 0, 0), -1)
+                cv2.putText(frame, label, (cx-tw//2, cy), cv2.FONT_HERSHEY_SIMPLEX, 1.4, (0, 255, 255), 3, cv2.LINE_AA)
 
                 if now - self.last_print >= 1.0:
                     print(f"Waga: {smooth_kg:.1f} kg | L={best['length_cm']}cm W={best['width_cm']}cm | swinie={len(all_pigs)} [{source}]")
                     self.last_print = now
             else:
                 msg = f"Brak swini [{source}]"
-                cv2.putText(frame, msg, (12, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 3, cv2.LINE_AA)
-                cv2.putText(frame, msg, (12, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
+                cv2.putText(frame, msg, (12, 36), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 3, cv2.LINE_AA)
+                cv2.putText(frame, msg, (12, 36), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2, cv2.LINE_AA)
 
-        # Status sekwencji na ekranie OpenCV
-        h_txt = (
-            f"Wysokosc: {self.live_height_cm:.0f} cm"
-            if self.live_height_cm is not None
-            else "Wysokosc: ---"
+    def compose_screen(self, frame: np.ndarray) -> np.ndarray:
+        """Kamera + panel LCD na dole → 600x1024 (opcjonalnie obrocone)."""
+        screen = compose_portrait(
+            frame,
+            self.state,
+            height_cm=self.live_height_cm,
+            remaining_s=self._ui_remaining,
+            samples=len(self.floor_samples),
+            measure_count=len(self.session_weights),
+            result=self.result,
+            cal_height_cm=float(self.cal["height_cm"]),
         )
-        if self.state == STATE_IDLE:
-            draw_status(frame, ["Nacisnij S / przycisk aby rozpoczac", h_txt], (255, 255, 255))
-        elif self.state == STATE_CALIBRATING:
-            remaining = max(0.0, CALIBRATE_DURATION_S - elapsed)
-            lines = [f"KALIBRACJA SKALI... {remaining:.1f} s", h_txt]
-            if self.can_recalibrate:
-                lines.insert(1, f"Probki podlogi: {len(self.floor_samples)}")
-            else:
-                lines.insert(1, "tryb wideo — zapisana skala")
-            draw_status(frame, lines, (0, 200, 255))
-        elif self.state == STATE_MEASURING:
-            remaining = max(0.0, MEASURE_DURATION_S - elapsed)
-            draw_status(frame, [
-                f"WAZENIE... {remaining:.1f} s",
-                f"Pomiary: {len(self.session_weights)}",
-                h_txt,
-            ], (0, 255, 0))
-        elif self.state == STATE_RESULT:
-            if self.result is None:
-                draw_status(frame, [
-                    "BRAK POMIAROW — nie wykryto swini",
-                    "Nacisnij S / przycisk ponownie",
-                    h_txt,
-                ], (0, 0, 255))
-            else:
-                r = self.result
-                draw_status(frame, [
-                    f"WYNIK: srednia {r['mean']:.1f} kg | mediana {r['median']:.1f} kg",
-                    f"Min/Max: {r['min']:.1f} / {r['max']:.1f} kg  ({r['n']} pomiarow)",
-                    "Nacisnij S / przycisk aby zwazyc ponownie",
-                    h_txt,
-                ], (0, 255, 255))
-
-        self._refresh_display(elapsed)
+        return frame_for_monitor(screen)
 
 
 def wait_for_oak(
@@ -467,21 +426,9 @@ def run_camera() -> None:
     """Zrodlo: kamera OAK-D S2 (RGB + maly strumien glebi do kalibracji skali)."""
     import depthai as dai
 
-    disp = init_display()
-    if disp is not None:
-        disp.show_booting("Start systemu...")
+    print(">>> Start — monitor 7\" (OpenCV), bez ILI9341")
+    wait_for_oak(dai, on_wait=lambda step: print(f">>> {step}"))
 
-    def _boot(step: str) -> None:
-        if disp is not None:
-            try:
-                disp.show_booting(step)
-            except Exception:  # noqa: BLE001
-                pass
-
-    _boot("Oczekuje na OAK-D")
-    wait_for_oak(dai, on_wait=_boot)
-
-    _boot("Laczenie z kamera...")
     try:
         pipeline = dai.Pipeline()
     except RuntimeError as e:
@@ -504,17 +451,15 @@ def run_camera() -> None:
     stereo.setOutputSize(DEPTH_W, DEPTH_H)
     depth_queue = stereo.depth.createOutputQueue(maxSize=1, blocking=False)
 
-    _boot("Inicjalizacja...")
     pipeline.start()
 
     # Ogniskowa fx z fabrycznej kalibracji kamery — stala, czytana raz
     device = pipeline.getDefaultDevice()
     fx = float(device.readCalibration().getCameraIntrinsics(dai.CameraBoardSocket.CAM_A, RGB_W, RGB_H)[0][0])
 
-    session = WeighingSession(fx=fx, display=disp)
+    session = WeighingSession(fx=fx)
     btn = StartButton()
-    if disp is not None:
-        disp.show_idle(session.live_height_cm)
+    setup_monitor_window()
 
     print(f"Zrodlo: kamera OAK-D S2 | podloga={session.cal['height_cm']}cm, skala={session.scale:.6f} cm/px | fx={fx:.1f}px | metoda={session.coeffs['method']}")
     print(f"Czas pomiaru: {MEASURE_DURATION_S:.0f} s (+ {CALIBRATE_DURATION_S:.0f} s kalibracji skali)")
@@ -540,7 +485,7 @@ def run_camera() -> None:
                     depth_frame = depth_in.getFrame()
 
                 session.update(frame, depth_frame)
-                cv2.imshow(WINDOW, frame)
+                cv2.imshow(WINDOW, session.compose_screen(frame))
     finally:
         btn.close()
         cv2.destroyAllWindows()
@@ -564,17 +509,12 @@ def run_video(path: str) -> None:
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     delay = max(1, int(1000 / fps))
 
-    session = WeighingSession(fx=None, display=init_display())  # brak glebi -> zapisana skala
+    session = WeighingSession(fx=None)  # brak glebi -> zapisana skala
     btn = StartButton()
-    if session.display is not None:
-        session.display.show_booting("Tryb wideo...")
-        session.display.show_idle(session.live_height_cm)
+    setup_monitor_window()
     print(f"Zrodlo: wideo {video_path.name} ({total} klatek, {fps:.0f} FPS) | skala={session.scale:.6f} cm/px | metoda={session.coeffs['method']}")
     print(f"Czas pomiaru: {MEASURE_DURATION_S:.0f} s (+ {CALIBRATE_DURATION_S:.0f} s stabilizacji)")
     print("Wideo zapetla sie. S / przycisk — start wazenia, Q — wyjscie\n")
-
-    cv2.namedWindow(WINDOW, cv2.WINDOW_NORMAL)
-    cv2.resizeWindow(WINDOW, 1280, 720)
 
     try:
         while True:
@@ -590,7 +530,7 @@ def run_video(path: str) -> None:
                 continue
 
             session.update(frame, depth_frame=None)
-            cv2.imshow(WINDOW, frame)
+            cv2.imshow(WINDOW, session.compose_screen(frame))
     finally:
         btn.close()
         cap.release()

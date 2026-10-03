@@ -1,54 +1,69 @@
-"""Najprostszy test ekranu ILI9341 na Raspberry Pi 5.
-
-Uruchamia wyswietlacz i pokazuje napis. Nic wiecej — do sprawdzenia,
-czy okablowanie i SPI dzialaja.
+"""Test layoutu monitora 7\" 1024x600 w pionie (600x1024).
 
     python check/hello_screen.py
 
-Wymaga (na Pi):
-    pip install adafruit-circuitpython-rgb-display adafruit-blinka pillow
-    oraz wlaczonego SPI (sudo raspi-config -> Interface Options -> SPI).
-
-Pi 5 + CS na CE0 (pin 24): kernel zajmuje CE0 jako spi0 CS0, wiec
-DigitalInOut(board.CE0) rzuca lgpio.error: 'GPIO busy'. Zwolnij CE0/CE1
-ze sterownika SPI (SPI zostaje aktywne), dodajac do /boot/firmware/config.txt:
-
-    dtoverlay=spi0-0cs
-
-Potem reboot. Alternatywa: skrypt Adafruit raspi-spi-reassign.py
-z --ce0=disabled --ce1=disabled.
+Q / Esc = koniec.
 """
-import board
-import digitalio
-from adafruit_rgb_display import ili9341
-from PIL import Image, ImageDraw, ImageFont
+import sys
+import time
 
-# --- inicjalizacja ekranu ---
-spi = board.SPI()
-cs = digitalio.DigitalInOut(board.CE0)    # CS  -> pin 24
-dc = digitalio.DigitalInOut(board.D25)    # DC  -> pin 22
-rst = digitalio.DigitalInOut(board.D17)   # RST -> pin 11
+import cv2
+import numpy as np
 
-disp = ili9341.ILI9341(
-    spi, cs=cs, dc=dc, rst=rst,
-    width=320, height=240,          # natywny raster panelu (poziomy)
-    baudrate=24_000_000, rotation=270,  # 270 = portret, obrócony o 180 vs 90
-)
+from display import SCREEN_H, SCREEN_W, compose_portrait
 
-WIDTH, HEIGHT = 240, 320  # canvas portretowy (po rotation=270)
+WINDOW = "PigWeight monitor test"
 
-# --- rysowanie ---
-img = Image.new("RGB", (WIDTH, HEIGHT), (0, 0, 0))  # czarne tlo
-draw = ImageDraw.Draw(img)
 
-try:
-    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 40)
-except OSError:
-    font = ImageFont.load_default()
+def fake_camera(t: float) -> np.ndarray:
+    img = np.zeros((720, 1280, 3), dtype=np.uint8)
+    img[:] = (40, 40, 40)
+    cv2.putText(img, "KAMERA", (480, 360), cv2.FONT_HERSHEY_SIMPLEX, 2.0, (0, 220, 90), 3)
+    cv2.putText(img, f"t={t:.1f}s", (520, 420), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (200, 200, 200), 2)
+    return img
 
-text = "DZIALA!"
-w = draw.textbbox((0, 0), text, font=font)[2]
-draw.text(((WIDTH - w) // 2, 140), text, font=font, fill=(0, 220, 90))  # zielony napis
 
-disp.image(img)  # wyslij na ekran
-print("Napis wyswietlony na ILI9341.")
+cv2.namedWindow(WINDOW, cv2.WINDOW_NORMAL)
+cv2.resizeWindow(WINDOW, SCREEN_W, SCREEN_H)
+cv2.setWindowProperty(WINDOW, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+
+states = [
+    ("idle", {}),
+    ("calibrating", {"remaining_s": 0.8, "samples": 12}),
+    ("measuring", {"remaining_s": 2.1, "measure_count": 40}),
+    (
+        "result",
+        {
+            "result": {
+                "n": 48,
+                "mean": 112.4,
+                "median": 111.8,
+                "min": 98.2,
+                "max": 130.5,
+                "std": 6.3,
+            },
+            "cal_height_cm": 131.0,
+        },
+    ),
+]
+
+print(f"Test UI {SCREEN_W}x{SCREEN_H}. Q / Esc = koniec.")
+idx = 0
+t0 = time.monotonic()
+while True:
+    t = time.monotonic() - t0
+    idx = int(t // 2.5) % len(states)
+    state, kwargs = states[idx]
+    screen = compose_portrait(
+        fake_camera(t),
+        state,
+        height_cm=131.0,
+        **kwargs,
+    )
+    cv2.imshow(WINDOW, screen)
+    key = cv2.waitKey(30) & 0xFF
+    if key in (ord("q"), 27):
+        break
+
+cv2.destroyAllWindows()
+sys.exit(0)

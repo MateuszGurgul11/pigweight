@@ -1,53 +1,30 @@
-"""Ekran ILI9341 (240x320 SPI) dla wagi swin — Raspberry Pi 5.
+"""UI na monitor 7\" 1024x600 ustawiony pionowo (= 600x1024).
 
-Wyswietla wynik wazenia z live.py, wysokosc kamery nad podloga (na zywo)
-oraz komunikat startu systemu.
+Uklad:
+  [ podglad kamery — gora ]
+  [ panel danych jak dawny LCD — dol ]
 
-Pi 5 ma nowy kontroler GPIO (RP1), wiec uzywamy Adafruit Blinka +
-adafruit-circuitpython-rgb-display (chodzi przez lgpio).
-
-Pi 5 + CS na CE0 (pin 24): zeby uniknac lgpio.error: 'GPIO busy',
-dodaj do /boot/firmware/config.txt linie `dtoverlay=spi0-0cs` i zrebootuj.
-Bez tego kernel trzyma CE0 jako spi0 CS0 i DigitalInOut(board.CE0) pada.
-
-Piny LCD: CS=pin24 (CE0), DC=pin22 (GPIO25 / D25), RST=pin11 (GPIO17 / D17).
-
-Test okablowania (bez reszty programu):
-    python check/hello_screen.py
-    python display.py
-
-Import w live.py:
-    from display import PigDisplay, init_display
+Bez ILI9341 SPI — rysowanie OpenCV, live.py robi imshow fullscreen.
 """
 from __future__ import annotations
 
-from PIL import Image, ImageDraw, ImageFont
+import cv2
+import numpy as np
 
-# Canvas portretowy (rotation=270 na natywnym 320x240)
-WIDTH, HEIGHT = 240, 320
+# Natywny panel 1024x600 w pionie
+SCREEN_W = 600
+SCREEN_H = 1024
 
-# Kolory (RGB)
+# Kolory BGR (OpenCV)
 BG = (0, 0, 0)
 WHITE = (255, 255, 255)
 GREY = (150, 150, 150)
-GREEN = (0, 220, 90)
-YELLOW = (255, 210, 0)
-CYAN = (0, 200, 255)
-RED = (255, 70, 70)
-
-_FONT_PATHS = [
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-]
-
-
-def _font(size: int) -> ImageFont.FreeTypeFont:
-    for path in _FONT_PATHS:
-        try:
-            return ImageFont.truetype(path, size)
-        except OSError:
-            continue
-    return ImageFont.load_default()
+GREEN = (90, 220, 0)
+YELLOW = (0, 210, 255)
+CYAN = (255, 200, 0)
+RED = (70, 70, 255)
+PANEL_BG = (18, 18, 18)
+HEADER_BG = (30, 60, 20)
 
 
 def _fmt_height(height_cm: float | None) -> str:
@@ -56,162 +33,142 @@ def _fmt_height(height_cm: float | None) -> str:
     return f"{height_cm:.0f} cm"
 
 
-class PigDisplay:
-    """Cienka warstwa nad ILI9341 — rysuje ekrany stanow i wynik."""
-
-    def __init__(self, baudrate: int = 24_000_000, rotation: int = 270) -> None:
-        # Import lokalny, zeby modul dalo sie zaladowac tez bez sprzetu
-        import board
-        import digitalio
-        from adafruit_rgb_display import ili9341
-
-        spi = board.SPI()
-        cs = digitalio.DigitalInOut(board.CE0)   # CS  -> pin 24
-        dc = digitalio.DigitalInOut(board.D25)   # DC  -> pin 22
-        rst = digitalio.DigitalInOut(board.D17)  # RST -> pin 11
-
-        self._disp = ili9341.ILI9341(
-            spi, cs=cs, dc=dc, rst=rst,
-            width=320, height=240,          # natywny raster panelu (poziomy)
-            baudrate=baudrate, rotation=rotation,  # 270 = portret, obrócony o 180 vs 90
-        )
-        self._f_big = _font(36)
-        self._f_title = _font(18)
-        self._f_row = _font(16)
-        self._f_small = _font(14)
-        self.clear()
-
-    # --- niskopoziomowe ---
-
-    def _push(self, img: Image.Image) -> None:
-        self._disp.image(img)
-
-    def _canvas(self) -> tuple[Image.Image, ImageDraw.ImageDraw]:
-        img = Image.new("RGB", (WIDTH, HEIGHT), BG)
-        return img, ImageDraw.Draw(img)
-
-    def clear(self) -> None:
-        img, _ = self._canvas()
-        self._push(img)
-
-    def _centered(self, draw, text, font, y, fill) -> None:
-        w = draw.textbbox((0, 0), text, font=font)[2]
-        draw.text(((WIDTH - w) // 2, y), text, font=font, fill=fill)
-
-    def _draw_height(self, draw, height_cm: float | None, y: int = 292) -> None:
-        """Pasek wysokosci u dolu ekranu."""
-        self._centered(draw, f"Wysokosc: {_fmt_height(height_cm)}", self._f_small, y, CYAN)
-
-    # --- ekrany stanow ---
-
-    def show_booting(self, step: str = "") -> None:
-        """Komunikat przy starcie systemu (przed kamera / pipeline)."""
-        img, d = self._canvas()
-        self._centered(d, "WAGA SWIN", self._f_title, 70, WHITE)
-        self._centered(d, "Uruchamianie...", self._f_big, 120, GREEN)
-        if step:
-            self._centered(d, step[:28], self._f_small, 200, GREY)
-        self._centered(d, "Prosze czekac", self._f_small, 250, GREY)
-        self._push(img)
-
-    def show_idle(self, height_cm: float | None = None) -> None:
-        img, d = self._canvas()
-        self._centered(d, "WAGA SWIN", self._f_title, 36, WHITE)
-        self._centered(d, "Wysokosc", self._f_small, 80, GREY)
-        self._centered(d, _fmt_height(height_cm), self._f_big, 110, CYAN)
-        self._centered(d, "Nacisnij S / przycisk", self._f_small, 190, GREY)
-        self._centered(d, "aby rozpoczac wazenie", self._f_small, 215, GREY)
-        self._draw_height(d, height_cm)
-        self._push(img)
-
-    def show_calibrating(
-        self, remaining: float, samples: int, height_cm: float | None = None,
-    ) -> None:
-        img, d = self._canvas()
-        self._centered(d, "KALIBRACJA SKALI", self._f_title, 50, CYAN)
-        self._centered(d, f"{remaining:.1f} s", self._f_big, 100, WHITE)
-        self._centered(d, f"probki: {samples}", self._f_small, 170, GREY)
-        self._draw_height(d, height_cm)
-        self._push(img)
-
-    def show_measuring(
-        self, remaining: float, count: int, height_cm: float | None = None,
-    ) -> None:
-        img, d = self._canvas()
-        self._centered(d, "WAZENIE...", self._f_title, 50, GREEN)
-        self._centered(d, f"{remaining:.1f} s", self._f_big, 100, WHITE)
-        self._centered(d, f"pomiary: {count}", self._f_small, 170, GREY)
-        self._draw_height(d, height_cm)
-        self._push(img)
-
-    def show_no_pig(self, height_cm: float | None = None) -> None:
-        img, d = self._canvas()
-        self._centered(d, "BRAK POMIAROW", self._f_title, 90, RED)
-        self._centered(d, "nie wykryto swini", self._f_small, 140, GREY)
-        self._centered(d, "Nacisnij S ponownie", self._f_small, 175, GREY)
-        self._draw_height(d, height_cm)
-        self._push(img)
-
-    def show_result(
-        self, r: dict, height_cm: float, live_height_cm: float | None = None,
-    ) -> None:
-        """Glowny ekran wyniku. r = {n, mean, median, min, max, std}."""
-        img, d = self._canvas()
-
-        d.rectangle((0, 0, WIDTH, 28), fill=(20, 60, 30))
-        self._centered(d, "WYNIK WAZENIA", self._f_title, 5, GREEN)
-
-        self._centered(d, f"{r['mean']:.1f} kg", self._f_big, 40, WHITE)
-
-        rows = [
-            ("Mediana", f"{r['median']:.1f} kg", CYAN),
-            ("Min", f"{r['min']:.1f} kg", YELLOW),
-            ("Max", f"{r['max']:.1f} kg", YELLOW),
-            ("Std", f"{r['std']:.1f} kg", GREY),
-            ("Kalibr.", f"{height_cm:.0f} cm", GREY),
-        ]
-        y = 95
-        for label, value, color in rows:
-            d.text((12, y), label, font=self._f_row, fill=GREY)
-            vw = d.textbbox((0, 0), value, font=self._f_row)[2]
-            d.text((WIDTH - 12 - vw, y), value, font=self._f_row, fill=color)
-            y += 28
-
-        self._centered(d, f"{r['n']} pom. | S = ponownie", self._f_small, 250, GREY)
-        self._draw_height(d, live_height_cm if live_height_cm is not None else height_cm)
-        self._push(img)
+def _put(
+    img: np.ndarray,
+    text: str,
+    org: tuple[int, int],
+    scale: float,
+    color: tuple[int, int, int],
+    thick: int = 2,
+) -> None:
+    cv2.putText(img, text, org, cv2.FONT_HERSHEY_SIMPLEX, scale, color, thick, cv2.LINE_AA)
 
 
-def init_display() -> PigDisplay | None:
-    """Probuje otworzyc ekran; zwraca None gdy brak sprzetu/bibliotek.
+def _centered(
+    img: np.ndarray,
+    text: str,
+    y: int,
+    scale: float,
+    color: tuple[int, int, int],
+    thick: int = 2,
+) -> None:
+    (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, thick)
+    x = max(0, (img.shape[1] - tw) // 2)
+    _put(img, text, (x, y), scale, color, thick)
 
-    Dzieki temu live.py dziala tez na laptopie (tryb wideo) bez ILI9341.
-    """
-    try:
-        disp = PigDisplay()
-        print(">>> ILI9341: ekran zainicjalizowany")
-        return disp
-    except Exception as e:  # noqa: BLE001 — chcemy zlapac wszystko (brak board/spi/hw)
-        print(f">>> ILI9341: brak ekranu ({type(e).__name__}: {e}) — kontynuuje bez wyswietlacza")
-        return None
+
+def fit_camera_top(frame: np.ndarray, area_h: int) -> np.ndarray:
+    """Skaluje klatke do szerokosci SCREEN_W, wstawia w pas o wysokosci area_h (czarne paski)."""
+    canvas = np.zeros((area_h, SCREEN_W, 3), dtype=np.uint8)
+    fh, fw = frame.shape[:2]
+    if fw < 1 or fh < 1:
+        return canvas
+    scale = SCREEN_W / float(fw)
+    new_w = SCREEN_W
+    new_h = int(round(fh * scale))
+    if new_h > area_h:
+        scale = area_h / float(fh)
+        new_h = area_h
+        new_w = int(round(fw * scale))
+    resized = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    x0 = (SCREEN_W - new_w) // 2
+    y0 = (area_h - new_h) // 2
+    canvas[y0 : y0 + new_h, x0 : x0 + new_w] = resized
+    return canvas
 
 
-if __name__ == "__main__":
-    import time
+def render_panel(
+    state: str,
+    *,
+    height_cm: float | None = None,
+    remaining_s: float = 0.0,
+    samples: int = 0,
+    measure_count: int = 0,
+    result: dict | None = None,
+    cal_height_cm: float | None = None,
+    panel_h: int,
+) -> np.ndarray:
+    """Dolny panel — odpowiednik ekranow dawnego LCD."""
+    img = np.full((panel_h, SCREEN_W, 3), PANEL_BG, dtype=np.uint8)
+    mid = panel_h // 2
 
-    disp = init_display()
-    if disp is None:
-        raise SystemExit("Nie udalo sie zainicjalizowac ekranu — sprawdz SPI i okablowanie.")
+    if state == "idle":
+        _centered(img, "WAGA SWIN", 48, 1.1, WHITE, 2)
+        _centered(img, "Wysokosc", mid - 70, 0.8, GREY, 2)
+        _centered(img, _fmt_height(height_cm), mid - 10, 2.2, CYAN, 3)
+        _centered(img, "Nacisnij S / przycisk", mid + 70, 0.75, GREY, 2)
+        _centered(img, "aby rozpoczac wazenie", mid + 110, 0.75, GREY, 2)
 
-    print("Test: boot -> idle -> kalibracja -> wazenie -> wynik")
-    disp.show_booting("Start systemu...");       time.sleep(2)
-    disp.show_booting("Oczekuje na OAK-D");      time.sleep(1)
-    disp.show_idle(245.0);                       time.sleep(2)
-    disp.show_calibrating(1.0, 42, 245.0);       time.sleep(2)
-    disp.show_measuring(3.0, 128, 244.0);        time.sleep(2)
-    disp.show_result(
-        {"n": 128, "mean": 112.4, "median": 111.8, "min": 98.2, "max": 130.5, "std": 6.3},
-        height_cm=245,
-        live_height_cm=244.0,
+    elif state == "calibrating":
+        _centered(img, "KALIBRACJA SKALI", 48, 1.0, CYAN, 2)
+        _centered(img, f"{remaining_s:.1f} s", mid - 20, 2.4, WHITE, 3)
+        _centered(img, f"probki: {samples}", mid + 60, 0.9, GREY, 2)
+
+    elif state == "measuring":
+        _centered(img, "WAZENIE...", 48, 1.1, GREEN, 2)
+        _centered(img, f"{remaining_s:.1f} s", mid - 20, 2.4, WHITE, 3)
+        _centered(img, f"pomiary: {measure_count}", mid + 60, 0.9, GREY, 2)
+
+    elif state == "result":
+        if result is None:
+            _centered(img, "BRAK POMIAROW", mid - 40, 1.1, RED, 2)
+            _centered(img, "nie wykryto swini", mid + 20, 0.8, GREY, 2)
+            _centered(img, "Nacisnij S ponownie", mid + 70, 0.75, GREY, 2)
+        else:
+            cv2.rectangle(img, (0, 0), (SCREEN_W, 44), HEADER_BG, -1)
+            _centered(img, "WYNIK WAZENIA", 32, 0.95, GREEN, 2)
+            _centered(img, f"{result['mean']:.1f} kg", 110, 2.6, WHITE, 4)
+
+            rows = [
+                ("Mediana", f"{result['median']:.1f} kg", CYAN),
+                ("Min", f"{result['min']:.1f} kg", YELLOW),
+                ("Max", f"{result['max']:.1f} kg", YELLOW),
+                ("Std", f"{result['std']:.1f} kg", GREY),
+            ]
+            if cal_height_cm is not None:
+                rows.append(("Kalibr.", f"{cal_height_cm:.0f} cm", GREY))
+            y = 160
+            for label, value, color in rows:
+                _put(img, label, (24, y), 0.75, GREY, 2)
+                (vw, _), _ = cv2.getTextSize(value, cv2.FONT_HERSHEY_SIMPLEX, 0.75, 2)
+                _put(img, value, (SCREEN_W - 24 - vw, y), 0.75, color, 2)
+                y += 42
+            _centered(img, f"{result['n']} pom. | S = ponownie", panel_h - 70, 0.7, GREY, 2)
+
+    else:
+        _centered(img, state.upper(), mid, 1.0, WHITE, 2)
+
+    # Pasek wysokosci zawsze na dole panelu
+    _centered(img, f"Wysokosc: {_fmt_height(height_cm)}", panel_h - 28, 0.7, CYAN, 2)
+    return img
+
+
+def compose_portrait(
+    camera_frame: np.ndarray,
+    state: str,
+    *,
+    height_cm: float | None = None,
+    remaining_s: float = 0.0,
+    samples: int = 0,
+    measure_count: int = 0,
+    result: dict | None = None,
+    cal_height_cm: float | None = None,
+    camera_ratio: float = 0.38,
+) -> np.ndarray:
+    """Pelny ekran 600x1024: kamera + panel LCD na dole."""
+    cam_h = max(200, int(SCREEN_H * camera_ratio))
+    panel_h = SCREEN_H - cam_h
+    top = fit_camera_top(camera_frame, cam_h)
+    panel = render_panel(
+        state,
+        height_cm=height_cm,
+        remaining_s=remaining_s,
+        samples=samples,
+        measure_count=measure_count,
+        result=result,
+        cal_height_cm=cal_height_cm,
+        panel_h=panel_h,
     )
-    print("Jesli widzisz ekrany — okablowanie i SPI dzialaja.")
+    # cienka linia rozdzielajaca
+    cv2.line(panel, (0, 0), (SCREEN_W, 0), (60, 60, 60), 2)
+    return np.vstack([top, panel])

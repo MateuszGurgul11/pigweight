@@ -1,5 +1,5 @@
 [Unit]
-Description=PigWeight live.py — waga swin (OAK-D + ILI9341)
+Description=PigWeight live.py — waga swin (OAK-D + monitor 7")
 # Czekaj na pulpit — OpenCV/DISPLAY i czesto USB potrzebuja sesji graficznej
 After=graphical.target network-online.target
 Wants=network-online.target
