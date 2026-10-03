@@ -30,7 +30,7 @@ dist-ssr/
 **/roboflow/test/
 **/Roboflow-nowe/
 
-# Dataset YOLO / obrazy treningowe (Podejscie3 i duplikaty)
+# Dataset YOLO / obrazy treningowe
 **/datasets/
 
 # Nagrania OAK-D i dataset (duże pliki — lokalnie / Drive)
