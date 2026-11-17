@@ -36,7 +36,7 @@ fi
 mkdir -p "$HOME/.config/systemd/user"
 cat > "$HOME/.config/systemd/user/przyciski.service" <<EOF
 [Unit]
-Description=PigWeight — wlacznik I/O i spust (GPIO 27 / GPIO 17)
+Description=PigWeight — wlacznik I/O i spust (GPIO 27 / GPIO 12)
 After=graphical-session.target
 
 [Service]

@@ -49,7 +49,7 @@ fi
 echo
 echo "Okablowanie:"
 echo "  PRZYCISK 1 (ZASILANIE): styki przycisku <-> dwa piny PWR (J2) na Pi 5"
-echo "  SPUST / WLACZNIK I/O:   GPIO 17 / GPIO 27 — patrz przyciski.py"
+echo "  SPUST / WLACZNIK I/O:   GPIO 12 / GPIO 27 — patrz przyciski.py"
 echo
 echo "Zachowanie (PWR):"
 echo "  WYLACZENIE: krotkie nacisniecie przy dzialajacym systemie -> shutdown"

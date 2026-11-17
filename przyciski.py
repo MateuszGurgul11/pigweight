@@ -8,7 +8,7 @@ WLACZNIK (kolyskowy I/O)  - zolty -> pin 13 (GPIO27), bialy -> pin 14 (GND)
         procesor w trybie oszczednym, trwajace wazenie przerwane,
         spust nic nie robi
 
-SPUST (pomiar)            - pomaranczowy -> pin 11 (GPIO17), czarny -> pin 9 (GND)
+SPUST (pomiar)            - pomaranczowy -> pin 32 (GPIO12), czarny -> pin 34 (GND)
     wcisniecie = start wazenia w dzialajacym live.py (sygnal SIGUSR1)
 
 live.py dziala caly czas (start_live.sh z autostartu) i trzyma kamere OAK-D,
@@ -33,7 +33,7 @@ from gpiozero import Button
 
 # ---------------- USTAWIENIA ----------------
 PIN_WLACZNIK = 27   # pin fizyczny 13
-PIN_SPUST = 17      # pin fizyczny 11
+PIN_SPUST = 12      # pin fizyczny 32 (GND: pin 34)
 
 # Nazwa wyjscia ekranu. None = wykryj przy kazdym usypianiu (komenda: wlr-randr).
 EKRAN = None

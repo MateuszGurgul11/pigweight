@@ -32,7 +32,7 @@ Działają dwa programy: `live.py` (kamera, ważenie, ekran) i `przyciski.py` (G
                  │                                                                 │
                  │  calibration.json  weight_coeff.json  models/pig_seg_best.pt    │
                  │                                                                 │
- Spust GPIO17 ───►  przyciski.py ──SIGUSR1 (start) / SIGUSR2 (przerwij)──► live.py │
+ Spust GPIO12 ───►  przyciski.py ──SIGUSR1 (start) / SIGUSR2 (przerwij)──► live.py │
  Włącznik GPIO27 ─►   └─ O: ekran off (wlr-randr), rfkill wifi/bt, governor powersave
                  └─────────────────────────────────────────────────────────────────┘
 
@@ -147,7 +147,7 @@ Współczynniki wagi są wczytywane na nowo przy każdym starcie sesji, więc ew
 | Przycisk | Przewody → pin | Działanie |
 |---|---|---|
 | Włącznik I/O | żółty → pin 13 (GPIO27), biały → pin 14 (GND) | I = praca; O = uśpienie |
-| Spust | pomarańczowy → pin 11 (GPIO17), czarny → pin 9 (GND) | start ważenia |
+| Spust | pomarańczowy → pin 32 (GPIO12), czarny → pin 34 (GND) | start ważenia |
 
 - `gpiozero`, pull-up, aktywny LOW, filtr drgań 0,1 s (włącznik) / 0,05 s (spust).
 - **Spust** wysyła `SIGUSR1` do procesu `python … live.py` tego samego użytkownika (szukany w `/proc`). W pozycji O jest ignorowany. Spust w trakcie ważenia zaczyna je od nowa (jak klawisz `S`).
@@ -259,7 +259,7 @@ Logi: `tail -f live_autostart.log`.
 
 ### Nowe przyciski (2026-11-17)
 
-7. Stary przycisk na GPIO 12 (pin 32, Blinka) usunięty. Spust (GPIO17) i włącznik I/O (GPIO27) obsługuje `przyciski.py`, który steruje `live.py` sygnałami. Wcześniejsza wersja uruchamiała przy każdym spuście nowy program pomiaru — przy działającym `live.py` dałoby to konflikt o kamerę OAK-D.
+7. Stary przycisk na GPIO 12 (pin 32, Blinka) usunięty. Spust i włącznik I/O (GPIO27) obsługuje `przyciski.py`, który steruje `live.py` sygnałami. Wcześniejsza wersja uruchamiała przy każdym spuście nowy program pomiaru — przy działającym `live.py` dałoby to konflikt o kamerę OAK-D. Spust został na dotychczasowym okablowaniu: GPIO12 (pin 32) + GND (pin 34); plan z GPIO17 (pin 11) porzucony.
 
 ### Awaria z 2026-11-17 (diagnoza przez SSH)
 

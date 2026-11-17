@@ -1,8 +1,8 @@
-"""Test przyciskow: WLACZNIK I/O (GPIO 27, pin 13) i SPUST (GPIO 17, pin 11).
+"""Test przyciskow: WLACZNIK I/O (GPIO 27, pin 13) i SPUST (GPIO 12, pin 32).
 
 Okablowanie:
     wlacznik: zolty -> pin 13 (GPIO27), bialy  -> pin 14 (GND)
-    spust:    pomaranczowy -> pin 11 (GPIO17), czarny -> pin 9 (GND)
+    spust:    pomaranczowy -> pin 32 (GPIO12), czarny -> pin 34 (GND)
 
 Tylko odczyt — nic nie usypia i nie wysyla sygnalow do live.py.
 
@@ -19,7 +19,7 @@ from gpiozero import Button
 
 try:
     wlacznik = Button(27, pull_up=True, bounce_time=0.1)
-    spust = Button(17, pull_up=True, bounce_time=0.05)
+    spust = Button(12, pull_up=True, bounce_time=0.05)
 except Exception as e:  # noqa: BLE001
     if "busy" in str(e).lower():
         print("BLAD: GPIO busy — zatrzymaj usluge:  systemctl --user stop przyciski")
@@ -53,4 +53,4 @@ try:
 except KeyboardInterrupt:
     print(f"\nKoniec. Spust: {klikniecia} klikniec")
     if klikniecia == 0:
-        print("  Brak klikniec — sprawdz pin 11 (GPIO17) i GND (pin 9).")
+        print("  Brak klikniec — sprawdz pin 32 (GPIO12) i GND (pin 34).")
