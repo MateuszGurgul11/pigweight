@@ -166,7 +166,15 @@ Przycisk zasilania (jeśli nadal podłączony) idzie do złącza **PWR (J2)** Pi
 - Dolny pasek 110 px: **WYS.** (odległość kamery od podłogi z głębi), **WAGA** (kg), status fazy (`kalibr. Ns`, `pomiar Ns`, `brak pomiaru`).
 - Zmienne środowiskowe: `PIGWEIGHT_FULLSCREEN=0` wyłącza pełny ekran; `PIGWEIGHT_ROTATE=90|180|270` obraca całe płótno, gdy system zostaje w poziomie.
 
-### 5.6 Start kamery
+### 5.6 Odporność na błędy
+
+- **Błąd w klatce** (YOLO, pomiar, rysowanie): `safe_update()` łapie wyjątek, przerywa ważenie (pasek: „brak pomiaru”), program działa dalej. Traceback w logu, najwyżej raz na 10 s.
+- **Błąd kamery / pipeline** (odłączona OAK-D, brak urządzenia, zatrzymany pipeline): `main()` loguje traceback, pokazuje na monitorze „BLAD … restart za N s” i po 5 s startuje kamerę od nowa w tym samym procesie.
+- **Śmierć procesu**: systemd `Restart=always`, `RestartSec=5`, `StartLimitIntervalSec=0` (bez limitu). Opóźnienie 20 s i czekanie na USB w `start_live.sh` tylko tuż po boocie (uptime < 3 min).
+- `przyciski.py`: wyjątek w obsłudze przycisku jest logowany, kolejne naciśnięcia działają; usługa ma `Restart=always`.
+- Gdzie szukać błędu: `live_autostart.log` (linie `!!! BLAD`), `journalctl -u pigweight-live -b`, `journalctl --user -u przyciski -b`.
+
+### 5.7 Start kamery
 
 `wait_for_oak` odpytuje `dai.Device.getAllAvailableDevices()` co 3 s do 180 s (USB po starcie systemu bywa gotowe później). Komunikaty błędów podpowiadają instalację reguł udev (`check/install_oak_udev.sh`, vendor `03e7`).
 
@@ -216,13 +224,13 @@ Gdyby kiedyś trzeba je było zmienić: `coeff_area = znana_waga / A`, gdzie `A`
 4. Opcjonalnie `./check/install_power_button.sh`.
 5. Uruchomić `./install_autostart.sh` i `bash install_przyciski.sh`, a potem `sudo reboot`.
 
-`install_autostart.sh` instaluje usługę **systemd** `pigweight-live` (z podstawionymi ścieżkami i użytkownikiem, `Restart=on-failure`, `RestartSec=15`) oraz zapasowy wpis `~/.config/autostart/pigweight-live.desktop`.
+`install_autostart.sh` instaluje usługę **systemd** `pigweight-live` (z podstawionymi ścieżkami i użytkownikiem, `Restart=always`, `RestartSec=5`, bez limitu restartów) oraz zapasowy wpis `~/.config/autostart/pigweight-live.desktop`.
 
 `start_live.sh` przy każdym starcie:
 1. loguje do `live_autostart.log`,
 2. robi **`git pull --ff-only`** (automatyczna aktualizacja kodu; brak sieci nie blokuje startu),
 3. wybiera Pythona z `.venv` / `venv` / systemowego,
-4. przy `PIGWEIGHT_BOOT_DELAY=1` czeka 20 s, a następnie do 40×3 s na pojawienie się OAK-D w `lsusb`,
+4. przy `PIGWEIGHT_BOOT_DELAY=1` i uptime < 3 min czeka 20 s, a następnie do 40×3 s na pojawienie się OAK-D w `lsusb`,
 5. ostrzega o braku reguł udev / modelu i uruchamia `live.py` przez `exec`.
 
 Logi: `tail -f live_autostart.log`, `journalctl -u pigweight-live -f`.

@@ -36,6 +36,7 @@ import os
 import signal
 import sys
 import time
+import traceback
 from pathlib import Path
 
 # Sygnaly od przyciski.py — handlery jak najwczesniej: domyslna akcja
@@ -102,6 +103,20 @@ STATE_MEASURING = "measuring"
 STATE_RESULT = "result"
 
 WINDOW = "WagaSwin [YOLO]"
+
+# Odpornosc na bledy: blad klatki -> przerwane wazenie, program dziala dalej;
+# blad kamery/pipeline -> komunikat na ekranie i ponowny start po RETRY_DELAY_S
+RETRY_DELAY_S = 5.0
+ERROR_LOG_INTERVAL_S = 10.0
+
+
+def log_exception(where: str) -> None:
+    """Pelny traceback do konsoli / live_autostart.log / journala."""
+    print(f"\n!!! BLAD ({where}) {time.strftime('%Y-%m-%dT%H:%M:%S')}", flush=True)
+    traceback.print_exc()
+    sys.stdout.flush()
+    sys.stderr.flush()
+
 
 def setup_monitor_window() -> None:
     """Okno OpenCV na monitor 7\" pionowo (600x1024)."""
@@ -203,6 +218,7 @@ class WeighingSession:
         self.result: dict | None = None
         self.calib_msg = ""
         self.last_print = 0.0
+        self._last_error_log = 0.0
         self._ui_remaining = 0.0
         self.live_weight_kg: float | None = None
         # Wysokosc kamery nad podloga (z glebi) — aktualizowana caly czas
@@ -344,6 +360,21 @@ class WeighingSession:
         if self.state == STATE_RESULT and self.result is not None:
             self.live_weight_kg = float(self.result["mean"])
 
+    def safe_update(self, frame: np.ndarray, depth_frame: np.ndarray | None = None) -> np.ndarray:
+        """update() + ekran; wyjatek przerywa wazenie zamiast ubijac program."""
+        raw = frame.copy()
+        try:
+            self.update(frame, depth_frame)
+            return self.compose_screen(frame)
+        except Exception:  # noqa: BLE001 — pojedyncza klatka nie moze ubic live.py
+            now = time.time()
+            if now - self._last_error_log >= ERROR_LOG_INTERVAL_S:
+                log_exception("klatka")
+                self._last_error_log = now
+            self.cancel()
+            self.state = STATE_RESULT  # pasek: "brak pomiaru"
+            return self.compose_screen(raw)
+
     def compose_screen(self, frame: np.ndarray) -> np.ndarray:
         """Kamera 90° + waski pasek wysokosc/waga → 600x1024."""
         screen = compose_portrait(
@@ -393,7 +424,7 @@ def wait_for_oak(
         time.sleep(interval_s)
 
 
-def run_camera() -> None:
+def run_camera() -> bool:
     """Zrodlo: kamera OAK-D S2 (RGB + maly strumien glebi do kalibracji skali)."""
     import depthai as dai
 
@@ -441,7 +472,7 @@ def run_camera() -> None:
             while pipeline.isRunning():
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord("q"):
-                    break
+                    return True
                 sig_start, sig_cancel = take_signals()
                 if sig_cancel:
                     session.cancel()
@@ -458,25 +489,26 @@ def run_camera() -> None:
                 if depth_in is not None:
                     depth_frame = depth_in.getFrame()
 
-                session.update(frame, depth_frame)
-                cv2.imshow(WINDOW, session.compose_screen(frame))
+                cv2.imshow(WINDOW, session.safe_update(frame, depth_frame))
+        print(">>> Pipeline OAK-D zatrzymany")
+        return False
     finally:
         cv2.destroyAllWindows()
 
 
-def run_video(path: str) -> None:
+def run_video(path: str) -> bool:
     """Zrodlo: plik wideo (tylko RGB). Do testow bez kamery — glebia niedostepna."""
     video_path = Path(path)
     if not video_path.is_absolute():
         video_path = SCRIPT_DIR / video_path
     if not video_path.is_file():
         print(f"BLAD: brak pliku wideo {video_path}", file=sys.stderr)
-        return
+        return True
 
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         print(f"BLAD: nie mozna otworzyc {video_path}", file=sys.stderr)
-        return
+        return True
 
     fps = cap.get(cv2.CAP_PROP_FPS) or 15.0
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -493,7 +525,7 @@ def run_video(path: str) -> None:
         while True:
             key = cv2.waitKey(delay) & 0xFF
             if key == ord("q"):
-                break
+                return True
             sig_start, sig_cancel = take_signals()
             if sig_cancel:
                 session.cancel()
@@ -505,15 +537,58 @@ def run_video(path: str) -> None:
                 cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 continue
 
-            session.update(frame, depth_frame=None)
-            cv2.imshow(WINDOW, session.compose_screen(frame))
+            cv2.imshow(WINDOW, session.safe_update(frame, depth_frame=None))
     finally:
         cap.release()
         cv2.destroyAllWindows()
 
 
+def show_error_screen(msg: str, seconds: float) -> bool:
+    """Komunikat bledu na monitorze przez `seconds`; True gdy Q (wyjscie)."""
+    try:
+        setup_monitor_window()
+        img = np.zeros((SCREEN_H, SCREEN_W, 3), dtype=np.uint8)
+        msg = " ".join(msg.split())  # bez nowych linii (putText)
+        lines = ["BLAD", msg[:40], msg[40:80], ""]
+        deadline = time.monotonic() + seconds
+        while True:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                return False
+            canvas = img.copy()
+            lines[3] = f"restart za {left:.0f} s"
+            for i, txt in enumerate(lines):
+                color = (70, 70, 255) if i == 0 else (220, 220, 220)
+                cv2.putText(canvas, txt, (24, 420 + i * 50), cv2.FONT_HERSHEY_SIMPLEX,
+                            1.2 if i == 0 else 0.7, color, 2, cv2.LINE_AA)
+            cv2.imshow(WINDOW, frame_for_monitor(canvas))
+            if cv2.waitKey(100) & 0xFF == ord("q"):
+                return True
+    except Exception:  # noqa: BLE001 — brak ekranu: tylko czekamy
+        log_exception("ekran bledu")
+        time.sleep(seconds)
+        return False
+
+
+def main() -> None:
+    """Uruchamia zrodlo obrazu; po bledzie pokazuje komunikat i startuje od nowa."""
+    restarts = 0
+    while True:
+        try:
+            quit_requested = run_video(sys.argv[1]) if len(sys.argv) > 1 else run_camera()
+            if quit_requested:
+                return
+            msg = "zrodlo obrazu zatrzymane"
+        except KeyboardInterrupt:
+            return
+        except Exception as e:  # noqa: BLE001 — zamiast wyjscia: restart w procesie
+            log_exception("zrodlo obrazu")
+            msg = f"{type(e).__name__}: {e}"
+        restarts += 1
+        print(f">>> Restart #{restarts} za {RETRY_DELAY_S:.0f} s ({msg})", flush=True)
+        if show_error_screen(msg, RETRY_DELAY_S):
+            return
+
+
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        run_video(sys.argv[1])
-    else:
-        run_camera()
+    main()

@@ -26,6 +26,7 @@ import signal
 import subprocess
 import threading
 import time
+import traceback
 from signal import pause
 
 from gpiozero import Button
@@ -182,19 +183,30 @@ def pomiar():
     wyslij_do_live(signal.SIGUSR1, "start wazenia")
 
 
+def bezpiecznie(fn):
+    """Blad w obsludze przycisku tylko logujemy — nie moze zablokowac kolejnych nacisniec."""
+    def wrapper():
+        try:
+            fn()
+        except Exception:  # noqa: BLE001
+            log(f"BLAD w {fn.__name__}:")
+            traceback.print_exc()
+    return wrapper
+
+
 def main():
     log(f"Start. Ekran: {EKRAN or 'auto (wlr-randr)'}, governor: {GOVERNOR_NORMALNY}")
 
     wlacznik = Button(PIN_WLACZNIK, pull_up=True, bounce_time=0.1)
     spust = Button(PIN_SPUST, pull_up=True, bounce_time=0.05)
 
-    wlacznik.when_pressed = obudz    # styk zwarty   = pozycja I
-    wlacznik.when_released = usyp    # styk rozwarty = pozycja O
-    spust.when_pressed = pomiar
+    wlacznik.when_pressed = bezpiecznie(obudz)    # styk zwarty   = pozycja I
+    wlacznik.when_released = bezpiecznie(usyp)    # styk rozwarty = pozycja O
+    spust.when_pressed = bezpiecznie(pomiar)
 
     # Stan wlacznika w chwili startu
     if not wlacznik.is_pressed:
-        usyp()
+        bezpiecznie(usyp)()
     else:
         log("WLACZNIK w pozycji I : praca normalna")
 

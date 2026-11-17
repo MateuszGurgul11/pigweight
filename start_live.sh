@@ -59,7 +59,9 @@ if [[ -f "${HOME:-}/.Xauthority" ]]; then
 fi
 
 # Po boocie daj czas na USB (OAK-D) i pulpit
-if [[ "${PIGWEIGHT_BOOT_DELAY:-}" == "1" ]]; then
+# Tylko tuz po boocie (uptime < 3 min) — restart po bledzie startuje od razu
+UPTIME_S="$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo 0)"
+if [[ "${PIGWEIGHT_BOOT_DELAY:-}" == "1" && "$UPTIME_S" -lt 180 ]]; then
   echo ">>> start_live: czekam 20 s na USB/DISPLAY..."
   sleep 20
   echo ">>> start_live: czekam na OAK-D w lsusb..."
