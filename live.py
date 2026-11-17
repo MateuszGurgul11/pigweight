@@ -10,14 +10,16 @@ Orientacja OS: Screen Configuration -> Right/Left.
 Opcjonalnie: PIGWEIGHT_ROTATE=90|270 (caly ekran) jesli OS nie jest w pionie.
 
 Sekwencja wazenia (identyczna dla obu zrodel):
-    S / przycisk (GPIO 12, pin 32) — start: kalibracja skali -> pomiar
-        przez MEASURE_DURATION_S sekund -> podsumowanie. Kolejne S/przycisk
+    S / SIGUSR1 (spust) — start: kalibracja skali -> pomiar
+        przez MEASURE_DURATION_S sekund -> podsumowanie. Kolejne S/spust
         zaczyna od nowa.
+    SIGUSR2 (wlacznik -> O) — przerwanie, powrot do spoczynku
     Q — wyjscie
 
-Przycisk wagi: GPIO 12 (pin 32) <-> przycisk <-> GND (pin 34); pull-up, aktywny LOW.
-Przycisk zasilania (przycisk 1): styki <-> zlaczze PWR (J2) na Pi 5 — ON+OFF
-bez GPIO; instrukcja: ./check/install_power_button.sh
+live.py nie czyta GPIO. Przyciski obsluguje przyciski.py (osobna usluga)
+i wysyla sygnaly do tego procesu:
+    kill -USR1 <pid>   # jak S
+    kill -USR2 <pid>   # przerwij
 
 OAK-D / DepthAI: jesli lsusb widzi Movidius (03e7), a live.py rzuca
 "No available devices" / "Insufficient permissions" — brak reguł udev:
@@ -31,14 +33,43 @@ W trybie wideo nie ma glebi — uzywana jest zapisana skala z calibration.json.
 """
 import json
 import os
+import signal
 import sys
 import time
 from pathlib import Path
 
+# Sygnaly od przyciski.py — handlery jak najwczesniej: domyslna akcja
+# SIGUSR1/2 to zabicie procesu (spust w trakcie importow nie moze ubic live.py).
+_signal_start = False
+_signal_cancel = False
+
+
+def _on_sigusr1(_signum, _frame) -> None:
+    global _signal_start
+    _signal_start = True
+
+
+def _on_sigusr2(_signum, _frame) -> None:
+    global _signal_cancel
+    _signal_cancel = True
+
+
+signal.signal(signal.SIGUSR1, _on_sigusr1)
+signal.signal(signal.SIGUSR2, _on_sigusr2)
+
+
+def take_signals() -> tuple[bool, bool]:
+    """Zwraca (start, cancel) i zeruje flagi."""
+    global _signal_start, _signal_cancel
+    start, cancel = _signal_start, _signal_cancel
+    _signal_start = _signal_cancel = False
+    return start, cancel
+
+
 import cv2
 import numpy as np
 
-from detector import detect_best_pig, estimate_weight, WeightSmoother
+from detector import detect_best_pig, estimate_weight, scale_for_width, WeightSmoother
 from display import SCREEN_H, SCREEN_W, compose_portrait
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -72,12 +103,6 @@ STATE_RESULT = "result"
 
 WINDOW = "WagaSwin [YOLO]"
 
-# Fizyczny przycisk startu — BCM GPIO 12 = pin fizyczny 32
-# Okablowanie: pin 32 <-> przycisk <-> GND (pin 34); aktywny LOW + pull-up
-BUTTON_PIN_NAME = "D12"
-BUTTON_DEBOUNCE_S = 0.25
-
-
 def setup_monitor_window() -> None:
     """Okno OpenCV na monitor 7\" pionowo (600x1024)."""
     cv2.namedWindow(WINDOW, cv2.WINDOW_NORMAL)
@@ -99,72 +124,6 @@ def frame_for_monitor(frame: np.ndarray) -> np.ndarray:
     if MONITOR_ROTATE == 180:
         return cv2.rotate(frame, cv2.ROTATE_180)
     return frame
-
-
-class StartButton:
-    """Przycisk startu na GPIO. Bez Blinka = martwy obiekt (tylko klawisz S)."""
-
-    def __init__(self) -> None:
-        self._pin = None
-        self._idle_high = True  # True = pull-up / aktywny LOW
-        self._was_active = False
-        self._last_fire = 0.0
-        try:
-            import board
-            import digitalio
-
-            pin = getattr(board, BUTTON_PIN_NAME)
-            dio = digitalio.DigitalInOut(pin)
-            dio.direction = digitalio.Direction.INPUT
-            dio.pull = digitalio.Pull.UP
-            self._pin = dio
-
-            time.sleep(0.05)
-            samples = [bool(dio.value) for _ in range(10)]
-            high_n = sum(1 for s in samples if s)
-            self._idle_high = high_n >= 5
-            self._was_active = False
-            polarity = "aktywny LOW (do GND)" if self._idle_high else "aktywny HIGH"
-            print(
-                f">>> Przycisk: GPIO {BUTTON_PIN_NAME} (pin 32) gotowy | "
-                f"spoczynek={'HIGH' if self._idle_high else 'LOW'} | {polarity}"
-            )
-            if high_n == 0:
-                print(">>> Przycisk: pin zawsze LOW — sprawdz czy nie jest na stale zwarty do GND")
-            elif high_n == 10:
-                print(
-                    ">>> Przycisk: pin w spoczynku HIGH (OK). "
-                    "Naciskaj — w konsoli musi pojawic sie 'NACISNIETY'"
-                )
-        except Exception as e:  # noqa: BLE001 — laptop / brak Blinka
-            print(f">>> Przycisk: niedostepny ({type(e).__name__}: {e}) — tylko klawisz S")
-
-    def _active(self) -> bool:
-        high = bool(self._pin.value)
-        return (not high) if self._idle_high else high
-
-    def pressed(self) -> bool:
-        """True raz na naciśnięcie (wejscie w stan aktywny), z debounce."""
-        if self._pin is None:
-            return False
-
-        active = self._active()
-        now = time.monotonic()
-        fired = False
-        if active and not self._was_active and (now - self._last_fire) >= BUTTON_DEBOUNCE_S:
-            self._last_fire = now
-            fired = True
-            print(">>> Przycisk: NACISNIETY")
-        self._was_active = active
-        return fired
-
-    def close(self) -> None:
-        if self._pin is not None:
-            try:
-                self._pin.deinit()
-            except Exception:  # noqa: BLE001
-                pass
-            self._pin = None
 
 
 def load_calibration() -> dict:
@@ -233,7 +192,8 @@ class WeighingSession:
         if fx is not None:
             self.scale = float(self.cal["height_cm"]) / fx
         else:
-            self.scale = float(self.cal["scale_cm_per_px"])
+            # Tryb wideo — skala przeliczana do szerokosci klatki w update()
+            self.scale = scale_for_width(self.cal, RGB_W)
 
         self.smoother = WeightSmoother(window=30, sigma=2.0)
         self.state = STATE_IDLE
@@ -256,10 +216,21 @@ class WeighingSession:
         self.floor_samples = []
         self.result = None
         self.live_weight_kg = None
-        self.coeffs = load_coeff()  # swieze wspolczynniki (mogly zmienic sie w app.py)
+        self.coeffs = load_coeff()  # swieze wspolczynniki (weight_coeff.json mogl byc edytowany)
         self.state = STATE_CALIBRATING
         self.state_started = time.time()
         print(">>> Start sekwencji: kalibracja skali...")
+
+    def cancel(self) -> None:
+        """Przerwanie (wlacznik -> O): powrot do spoczynku bez wyniku."""
+        if self.state in (STATE_CALIBRATING, STATE_MEASURING):
+            print(">>> Wazenie przerwane")
+        self.smoother.clear()
+        self.session_weights = []
+        self.floor_samples = []
+        self.result = None
+        self.live_weight_kg = None
+        self.state = STATE_IDLE
 
     def _finish_calibration(self) -> None:
         if not self.can_recalibrate:
@@ -286,6 +257,9 @@ class WeighingSession:
         self.scale = new_height / self.fx
         self.cal.update({
             "height_cm": round(new_height, 1),
+            # fx i skala zapisane dla RGB_W — inne rozdzielczosci: scale_for_width()
+            "fx_px": round(self.fx, 2),
+            "ref_width_px": RGB_W,
             "scale_cm_per_px": round(self.scale, 6),
             "px_per_cm": round(1.0 / self.scale, 2),
             "fov_width_cm": round(RGB_W * self.scale, 1),
@@ -299,6 +273,9 @@ class WeighingSession:
         """Przetwarza jedna klatke: przejscia stanow, detekcja, rysowanie na frame."""
         now = time.time()
         elapsed = now - self.state_started
+
+        if not self.can_recalibrate:
+            self.scale = scale_for_width(self.cal, frame.shape[1])
 
         # Wysokosc nad podloga — zawsze gdy jest glebia (takze przed wazeniem)
         if depth_frame is not None:
@@ -330,7 +307,7 @@ class WeighingSession:
                 print(f"  Std:      {r['std']:.1f} kg")
                 print(f"  Skala:    {self.calib_msg}")
                 print("=" * 50)
-                print("Nacisnij S / przycisk aby zwazyc ponownie.\n")
+                print("Nacisnij S / spust aby zwazyc ponownie.\n")
 
         # Pozostaly czas fazy — do panelu na dole ekranu
         if self.state == STATE_CALIBRATING:
@@ -361,7 +338,7 @@ class WeighingSession:
                 cv2.line(frame, best["width_p1"], best["width_p2"], (255, 0, 0), 2)
 
                 if now - self.last_print >= 1.0:
-                    print(f"Waga: {smooth_kg:.1f} kg | L={best['length_cm']}cm W={best['width_cm']}cm | swinie={len(all_pigs)} [{source}]")
+                    print(f"Waga: {smooth_kg:.1f} kg | L={best['length_cm']}cm W={best['width_cm']}cm A={best['area_cm2']}cm2 | swinie={len(all_pigs)} [{source}]")
                     self.last_print = now
 
         if self.state == STATE_RESULT and self.result is not None:
@@ -452,12 +429,12 @@ def run_camera() -> None:
     fx = float(device.readCalibration().getCameraIntrinsics(dai.CameraBoardSocket.CAM_A, RGB_W, RGB_H)[0][0])
 
     session = WeighingSession(fx=fx)
-    btn = StartButton()
     setup_monitor_window()
+    take_signals()  # spust nacisniety podczas startu nie uruchamia wazenia z opoznieniem
 
     print(f"Zrodlo: kamera OAK-D S2 | podloga={session.cal['height_cm']}cm, skala={session.scale:.6f} cm/px | fx={fx:.1f}px | metoda={session.coeffs['method']}")
     print(f"Czas pomiaru: {MEASURE_DURATION_S:.0f} s (+ {CALIBRATE_DURATION_S:.0f} s kalibracji skali)")
-    print("Uruchomiono kamere [YOLO-seg]. S / przycisk — start wazenia, Q — wyjscie\n")
+    print("Uruchomiono kamere [YOLO-seg]. S / spust — start wazenia, Q — wyjscie\n")
 
     try:
         with pipeline:
@@ -465,7 +442,10 @@ def run_camera() -> None:
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord("q"):
                     break
-                if key == ord("s") or btn.pressed():
+                sig_start, sig_cancel = take_signals()
+                if sig_cancel:
+                    session.cancel()
+                if key == ord("s") or sig_start:
                     session.start()
 
                 video_in = video_queue.tryGet()
@@ -481,7 +461,6 @@ def run_camera() -> None:
                 session.update(frame, depth_frame)
                 cv2.imshow(WINDOW, session.compose_screen(frame))
     finally:
-        btn.close()
         cv2.destroyAllWindows()
 
 
@@ -504,18 +483,21 @@ def run_video(path: str) -> None:
     delay = max(1, int(1000 / fps))
 
     session = WeighingSession(fx=None)  # brak glebi -> zapisana skala
-    btn = StartButton()
     setup_monitor_window()
+    take_signals()
     print(f"Zrodlo: wideo {video_path.name} ({total} klatek, {fps:.0f} FPS) | skala={session.scale:.6f} cm/px | metoda={session.coeffs['method']}")
     print(f"Czas pomiaru: {MEASURE_DURATION_S:.0f} s (+ {CALIBRATE_DURATION_S:.0f} s stabilizacji)")
-    print("Wideo zapetla sie. S / przycisk — start wazenia, Q — wyjscie\n")
+    print("Wideo zapetla sie. S / spust — start wazenia, Q — wyjscie\n")
 
     try:
         while True:
             key = cv2.waitKey(delay) & 0xFF
             if key == ord("q"):
                 break
-            if key == ord("s") or btn.pressed():
+            sig_start, sig_cancel = take_signals()
+            if sig_cancel:
+                session.cancel()
+            if key == ord("s") or sig_start:
                 session.start()
 
             ret, frame = cap.read()
@@ -526,7 +508,6 @@ def run_video(path: str) -> None:
             session.update(frame, depth_frame=None)
             cv2.imshow(WINDOW, session.compose_screen(frame))
     finally:
-        btn.close()
         cap.release()
         cv2.destroyAllWindows()
 

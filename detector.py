@@ -20,6 +20,19 @@ import numpy as np
 MODEL_PATH = Path(os.path.abspath(__file__)).parent / "models" / "pig_seg_best.pt"
 MIN_CONTOUR_AREA_PX = 2000
 YOLO_CONF = 0.25          # prog pewnosci detekcji
+CALIB_REF_WIDTH_DEFAULT = 1920  # kalibracja.py liczy skale dla 1920x1080
+
+
+# ── Skala ──────────────────────────────────────────────────────────────────
+
+def scale_for_width(cal: dict, image_width: int) -> float:
+    """
+    Skala cm/px dla obrazu o danej szerokosci.
+    calibration.json trzyma scale_cm_per_px dla ref_width_px (ten sam kadr,
+    inna rozdzielczosc -> skala odwrotnie proporcjonalna do szerokosci).
+    """
+    ref_w = float(cal.get("ref_width_px", CALIB_REF_WIDTH_DEFAULT))
+    return float(cal["scale_cm_per_px"]) * ref_w / float(image_width)
 
 # ── Lazy-load modelu YOLO ──────────────────────────────────────────────────
 _yolo_model = None
@@ -38,6 +51,13 @@ def _get_model():
         print(f"Ladowanie modelu YOLO: {MODEL_PATH}")
         _yolo_model = YOLO(str(MODEL_PATH))
     return _yolo_model
+
+
+def _contour_mask(contour: np.ndarray, shape: tuple[int, ...]) -> np.ndarray:
+    """Maska wypelniona tylko danym konturem — PCA liczy sie z jednej swini."""
+    mask = np.zeros(shape[:2], dtype=np.uint8)
+    cv2.drawContours(mask, [contour], -1, 255, cv2.FILLED)
+    return mask
 
 
 # ── Segmentacja YOLO ───────────────────────────────────────────────────────
@@ -68,7 +88,7 @@ def segment_pigs_yolo(image: np.ndarray) -> list[tuple[np.ndarray, np.ndarray]]:
         cnt = max(contours, key=cv2.contourArea)
         if cv2.contourArea(cnt) < MIN_CONTOUR_AREA_PX:
             continue
-        pigs.append((cnt, mask_bin))
+        pigs.append((cnt, _contour_mask(cnt, image.shape)))
 
     return pigs
 
@@ -84,12 +104,12 @@ def segment_pigs_otsu(image: np.ndarray) -> list[tuple[np.ndarray, np.ndarray]]:
     binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
     binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
     contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    valid = [(c, binary) for c in contours if cv2.contourArea(c) > MIN_CONTOUR_AREA_PX]
+    valid = [c for c in contours if cv2.contourArea(c) > MIN_CONTOUR_AREA_PX]
     if not valid:
         return []
-    # Tylko najwkiszy kontur (pojedyncza swinia)
-    best = max(valid, key=lambda x: cv2.contourArea(x[0]))
-    return [best]
+    # Tylko najwiekszy kontur (pojedyncza swinia)
+    best = max(valid, key=cv2.contourArea)
+    return [(best, _contour_mask(best, image.shape))]
 
 
 # ── Pomiary PCA ────────────────────────────────────────────────────────────

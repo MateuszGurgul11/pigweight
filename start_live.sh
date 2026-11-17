@@ -18,8 +18,15 @@ echo "ROOT=$ROOT USER=$(id -un) HOME=${HOME:-?} DISPLAY=${DISPLAY:-?}"
 # Aktualizacja kodu z GitHuba (nie przerywaj bootu przy braku sieci)
 if command -v git >/dev/null && git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   echo ">>> start_live: git pull..."
+  OLD_HEAD="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || true)"
   if git -C "$ROOT" pull --ff-only 2>&1; then
     echo ">>> start_live: git pull OK"
+    # Nowa wersja przyciski.py -> restart uslugi przyciskow (systemctl --user)
+    if [[ -n "$OLD_HEAD" ]] && git -C "$ROOT" diff --name-only "$OLD_HEAD" HEAD | grep -qx 'przyciski.py'; then
+      echo ">>> start_live: zmieniony przyciski.py — restart uslugi przyciski"
+      XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user restart przyciski 2>&1 \
+        || echo ">>> start_live: UWAGA — restart przyciski nieudany"
+    fi
   else
     echo ">>> start_live: UWAGA — git pull nieudany, startuje lokalna wersja"
   fi
@@ -73,7 +80,7 @@ if [[ "${PIGWEIGHT_BOOT_DELAY:-}" == "1" ]]; then
 fi
 
 if [[ ! -f "$ROOT/models/pig_seg_best.pt" ]]; then
-  echo ">>> start_live: UWAGA — brak $ROOT/models/pig_seg_best.pt (wazenie po S padnie)"
+  echo ">>> start_live: UWAGA — brak $ROOT/models/pig_seg_best.pt (wazenie po S / spuscie padnie)"
 fi
 
 export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-xcb}"

@@ -2,6 +2,9 @@ import depthai as dai
 import numpy as np
 import json
 import time
+from pathlib import Path
+
+CALIB_PATH = Path(__file__).resolve().parent / "calibration.json"
 
 # ── Budowa pipeline (DepthAI v3) ────────────────────────────────
 pipeline = dai.Pipeline()
@@ -75,6 +78,7 @@ def calibrate(pipeline):
     result = {
         "height_cm":        round(Z_cm, 1),
         "fx_px":            round(fx, 2),
+        "ref_width_px":     1920,
         "scale_cm_per_px":  round(scale_cm_per_px, 6),
         "px_per_cm":        round(1.0 / scale_cm_per_px, 2),
         "fov_width_cm":     round(1920 * scale_cm_per_px, 1),
@@ -82,7 +86,7 @@ def calibrate(pipeline):
         "timestamp":        time.strftime("%Y-%m-%dT%H:%M:%S"),
     }
 
-    with open("calibration.json", "w", encoding="utf-8") as f:
+    with open(CALIB_PATH, "w", encoding="utf-8") as f:
         json.dump(result, f, indent=2, ensure_ascii=False)
 
     print()

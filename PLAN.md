@@ -67,7 +67,6 @@ Uzywamy tej samej funkcji `measure_pig()` — maska z YOLO zamiast Otsu.
 ## Struktura plikow
 ```
 ./
-  app.py          — web interface (+ endpoint /reload_model)
   live.py         — kamera live (+ YOLO)
   check/test.py   — test na video (+ YOLO)
   detector.py     — NEW: segment_pigs_yolo() + segment_pig_otsu() jako fallback

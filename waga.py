@@ -24,6 +24,8 @@ import cv2
 import depthai as dai
 import numpy as np
 
+from detector import scale_for_width
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 CALIB_PATH = SCRIPT_DIR / "calibration.json"
 COEFF_PATH = SCRIPT_DIR / "weight_coeff.json"
@@ -36,6 +38,9 @@ MIN_CONTOUR_AREA_PX = 3000
 MAX_PIGS = 6
 
 DEFAULT_COEFF = 0.0008
+# Wlasny klucz w weight_coeff.json — nie nadpisuje coeff_area/coeff_volume
+# uzywanych przez detector.py (live.py)
+COEFF_KEY = "coeff_depth_volume"
 
 SMOOTH_N = 10
 COLORS = [
@@ -54,20 +59,33 @@ def load_calibration() -> dict | None:
         return None
 
 
-def load_coeff() -> float:
+def _read_coeff_file() -> dict:
     if not COEFF_PATH.is_file():
-        return DEFAULT_COEFF
+        return {}
     try:
         with open(COEFF_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
-        return float(data.get("coeff", DEFAULT_COEFF))
-    except (json.JSONDecodeError, OSError, ValueError):
+        return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def load_coeff() -> float:
+    data = _read_coeff_file()
+    try:
+        # "coeff" — stary format zapisywany przez wczesniejsza wersje waga.py
+        return float(data.get(COEFF_KEY, data.get("coeff", DEFAULT_COEFF)))
+    except (TypeError, ValueError):
         return DEFAULT_COEFF
 
 
 def save_coeff(coeff: float) -> None:
+    data = _read_coeff_file()
+    data.pop("coeff", None)
+    data[COEFF_KEY] = round(coeff, 8)
+    data["timestamp"] = time.strftime("%Y-%m-%dT%H:%M:%S")
     with open(COEFF_PATH, "w", encoding="utf-8") as f:
-        json.dump({"coeff": round(coeff, 8), "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S")}, f, indent=2)
+        json.dump(data, f, indent=2)
 
 
 def build_pipeline() -> tuple[dai.Pipeline, dai.MessageQueue, dai.MessageQueue]:
@@ -255,7 +273,7 @@ def main() -> int:
         return 1
 
     camera_height_cm = float(cal["height_cm"])
-    scale = float(cal["scale_cm_per_px"])
+    scale = scale_for_width(cal, RGB_W)
     coeff = load_coeff()
 
     print(f"Kalibracja: podloga={camera_height_cm:.1f}cm, skala={scale:.6f} cm/px")

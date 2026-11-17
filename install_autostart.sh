@@ -51,7 +51,7 @@ if [[ ! -x "$ROOT/.venv/bin/python" && ! -x "$ROOT/venv/bin/python" ]]; then
   echo "UWAGA: brak .venv w $ROOT — autostart moze uzyc systemowego python3"
 fi
 if [[ ! -f "$ROOT/models/pig_seg_best.pt" ]]; then
-  echo "UWAGA: brak models/pig_seg_best.pt — wazenie padnie po S/przycisku"
+  echo "UWAGA: brak models/pig_seg_best.pt — wazenie padnie po S / spuscie"
   echo "      Skopiuj model do $ROOT/models/"
 fi
 
@@ -109,6 +109,8 @@ echo ">>> Autostart GUI: $DESKTOP_FILE"
 echo
 echo "Sprawdzenie enable:"
 systemctl is-enabled "$SERVICE_NAME" || true
+echo
+echo "Przyciski (wlacznik I/O + spust): bash $ROOT/install_przyciski.sh"
 echo
 echo "Gotowe. Zrob:  sudo reboot"
 echo "Po restarcie:"

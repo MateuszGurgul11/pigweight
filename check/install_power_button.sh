@@ -5,8 +5,8 @@
 #   styki przycisku  <->  dwa piny zlacza PWR (J2) na plytce Pi 5
 #   (obok USB-C; podpisane "PWR" — zwarcie = nacisk przycisku zasilania)
 #
-# Waga zostaje na GPIO (osobny przycisk):
-#   pin 32 (GPIO 12)  <->  przycisk  <->  pin 34 (GND)
+# Wlacznik I/O i spust sa na GPIO 27 / 17 — obsluguje je przyciski.py
+# (install_przyciski.sh), nie ten skrypt.
 #
 #   cd ~/Desktop/pigweight
 #   chmod +x check/install_power_button.sh
@@ -41,7 +41,7 @@ if grep -qE '^dtoverlay=gpio-shutdown' "$CONFIG"; then
   grep -E '^dtoverlay=gpio-shutdown' "$CONFIG" || true
   sudo sed -i.bak -E '/^dtoverlay=gpio-shutdown/d' "$CONFIG"
   NEED_REBOOT=1
-  echo ">>> Usunieto. GPIO 12/26 wolne dla wagi / innych zastosowan."
+  echo ">>> Usunieto. GPIO wolne dla przyciskow (przyciski.py)."
 else
   echo ">>> Brak dtoverlay=gpio-shutdown — OK (PWR nie wymaga overlay)."
 fi
@@ -49,7 +49,7 @@ fi
 echo
 echo "Okablowanie:"
 echo "  PRZYCISK 1 (ZASILANIE): styki przycisku <-> dwa piny PWR (J2) na Pi 5"
-echo "  PRZYCISK 2 (WAGA):      pin 32 (GPIO 12) <-> przycisk <-> pin 34 (GND)"
+echo "  SPUST / WLACZNIK I/O:   GPIO 17 / GPIO 27 — patrz przyciski.py"
 echo
 echo "Zachowanie (PWR):"
 echo "  WYLACZENIE: krotkie nacisniecie przy dzialajacym systemie -> shutdown"
@@ -66,5 +66,5 @@ else
   echo "Reboot nie jest wymagany — podlacz przycisk 1 pod PWR i testuj."
 fi
 echo
-echo "Test wagi (GPIO):  python check/hello_button.py"
+echo "Test spustu i wlacznika (GPIO):  python3 check/hello_przyciski.py"
 echo "Zasilanie: nacisnij przycisk 1 — powinien wylaczyc / wlaczyc Pi."

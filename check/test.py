@@ -14,7 +14,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from detector import detect_best_pig, estimate_weight, WeightSmoother
+from detector import detect_best_pig, estimate_weight, scale_for_width, WeightSmoother
 
 CALIB_PATH = ROOT / "calibration.json"
 COEFF_PATH = ROOT / "weight_coeff.json"
@@ -47,7 +47,6 @@ def main() -> int:
 
     cal = load_calibration()
     coeffs = load_coeff()
-    scale = float(cal["scale_cm_per_px"])
 
     known_kg = None
     if KNOWN_WEIGHT_PATH.exists():
@@ -65,6 +64,7 @@ def main() -> int:
     fps = cap.get(cv2.CAP_PROP_FPS)
     w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    scale = scale_for_width(cal, w)
     print(f"Wideo: {w}x{h}, {fps:.1f} FPS, {total_frames} klatek")
     print(f"Kalibracja: skala={scale:.6f} cm/px | metoda={coeffs['method']}")
     if known_kg is not None:

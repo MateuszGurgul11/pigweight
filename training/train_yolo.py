@@ -1,6 +1,6 @@
 """
 Trening YOLOv8n-seg na datasecie z Roboflow.
-Automatycznie tworzy split train/valid (80/20) i uruchamia trening.
+Automatycznie tworzy split train/valid (85/15, VAL_RATIO) i uruchamia trening.
 """
 import os
 import random
