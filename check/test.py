@@ -17,6 +17,7 @@ sys.path.insert(0, str(ROOT))
 from detector import detect_best_pig, estimate_weight, scale_for_width, WeightSmoother
 
 CALIB_PATH = ROOT / "calibration.json"
+CALIB_EXAMPLE_PATH = ROOT / "calibration.example.json"
 COEFF_PATH = ROOT / "weight_coeff.json"
 
 VIDEO_PATH = ROOT / "rgb_video.mp4"
@@ -24,7 +25,8 @@ KNOWN_WEIGHT_PATH = VIDEO_PATH.parent / "weight_kg.txt"
 
 
 def load_calibration() -> dict:
-    with open(CALIB_PATH, "r", encoding="utf-8") as f:
+    path = CALIB_PATH if CALIB_PATH.is_file() else CALIB_EXAMPLE_PATH
+    with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 

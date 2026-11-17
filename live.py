@@ -74,7 +74,8 @@ from detector import detect_best_pig, estimate_weight, scale_for_width, WeightSm
 from display import SCREEN_H, SCREEN_W, compose_portrait
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-CALIB_PATH = SCRIPT_DIR / "calibration.json"
+CALIB_PATH = SCRIPT_DIR / "calibration.json"  # lokalna, poza gitem
+CALIB_EXAMPLE_PATH = SCRIPT_DIR / "calibration.example.json"
 COEFF_PATH = SCRIPT_DIR / "weight_coeff.json"
 
 # 1280x720 — lzej na Pi 5 niz 1080p
@@ -142,7 +143,9 @@ def frame_for_monitor(frame: np.ndarray) -> np.ndarray:
 
 
 def load_calibration() -> dict:
-    with open(CALIB_PATH, "r", encoding="utf-8") as f:
+    # Brak lokalnej kalibracji (swiezy checkout) -> wartosci startowe z repo
+    path = CALIB_PATH if CALIB_PATH.is_file() else CALIB_EXAMPLE_PATH
+    with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 

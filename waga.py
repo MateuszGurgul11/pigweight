@@ -28,6 +28,7 @@ from detector import scale_for_width
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 CALIB_PATH = SCRIPT_DIR / "calibration.json"
+CALIB_EXAMPLE_PATH = SCRIPT_DIR / "calibration.example.json"
 COEFF_PATH = SCRIPT_DIR / "weight_coeff.json"
 
 RGB_W, RGB_H = 1920, 1080
@@ -50,10 +51,11 @@ COLORS = [
 
 
 def load_calibration() -> dict | None:
-    if not CALIB_PATH.is_file():
+    path = CALIB_PATH if CALIB_PATH.is_file() else CALIB_EXAMPLE_PATH
+    if not path.is_file():
         return None
     try:
-        with open(CALIB_PATH, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
     except (json.JSONDecodeError, OSError):
         return None

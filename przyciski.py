@@ -11,7 +11,7 @@ WLACZNIK (kolyskowy I/O)  - zolty -> pin 13 (GPIO27), bialy -> pin 14 (GND)
 SPUST (pomiar)            - pomaranczowy -> pin 11 (GPIO17), czarny -> pin 9 (GND)
     wcisniecie = start wazenia w dzialajacym live.py (sygnal SIGUSR1)
 
-live.py dziala caly czas (usluga pigweight-live) i trzyma kamere OAK-D,
+live.py dziala caly czas (start_live.sh z autostartu) i trzyma kamere OAK-D,
 dlatego spust nie uruchamia nowego programu, tylko wysyla sygnal:
     SIGUSR1 -> start wazenia (jak klawisz S)
     SIGUSR2 -> przerwij wazenie (wlacznik -> O)

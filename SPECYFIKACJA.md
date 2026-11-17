@@ -11,7 +11,7 @@ Docelowe urządzenie to samodzielny terminal:
 - **Raspberry Pi 5** + kamera stereo **Luxonis OAK-D S2** (RGB + głębia),
 - **monitor 7″ 1024×600** ustawiony pionowo,
 - **spust** (start ważenia) i **włącznik kołyskowy I/O** (usypianie) na GPIO, obsługiwane przez `przyciski.py`,
-- aplikacja `live.py` startuje sama po włączeniu prądu (systemd).
+- aplikacja `live.py` startuje sama po włączeniu prądu (autostart pulpitu → `start_live.sh`, który podnosi ją po awarii).
 
 Operator naciska spust → ~1 s kalibracji skali + 3 s pomiaru → na ekranie pojawia się wynik w kg.
 
@@ -49,7 +49,7 @@ Działają dwa programy: `live.py` (kamera, ważenie, ekran) i `przyciski.py` (G
 | Segmentacja | Ultralytics YOLOv8n-seg (≥ 8.4), model `models/pig_seg_best.pt` (6,8 MB, poza gitem) |
 | Kamera | Luxonis DepthAI v3 (`depthai ≥ 3.7`) |
 | GPIO | `gpiozero` + `lgpio` z apt (systemowy `python3`, nie `.venv`) — tylko `przyciski.py` |
-| System | Raspberry Pi OS Bookworm, systemd, X11/Xwayland (`QT_QPA_PLATFORM=xcb`) |
+| System | Raspberry Pi OS (Debian 13 trixie), pulpit labwc (Wayland) + Xwayland dla OpenCV (`QT_QPA_PLATFORM=xcb`) |
 
 ## 3. Struktura repozytorium
 
@@ -61,13 +61,13 @@ Działają dwa programy: `live.py` (kamera, ważenie, ekran) i `przyciski.py` (G
 | `display.py` | Rysowanie ekranu 600×1024: obrócony podgląd kamery + pasek statusu. |
 | `kalibracja.py` | Jednorazowa kalibracja kamery (wysokość nad podłogą → skala cm/px). |
 | `waga.py` | **Starsze podejście** (bez ML): segmentacja świń z samej mapy głębi, waga z objętości. Nie jest używane przez `live.py`. |
-| `calibration.json` | Wysokość kamery, ogniskowa, skala cm/px, pole widzenia. |
+| `calibration.json` | Wysokość kamery, ogniskowa, skala cm/px, pole widzenia — **lokalny dla urządzenia, poza gitem**. Brak pliku → wartości z `calibration.example.json`. |
 | `weight_coeff.json` | Współczynniki wzoru na wagę i wybrana metoda. |
 | `models/pig_seg/` | Artefakty treningu YOLO (wykresy, `results.csv`, `args.yaml`). Same wagi `*.pt` są w `.gitignore`. |
 | `training/extract_frames.py` | Wycinanie klatek z nagrań `dataset/pig_*/rgb_video.mp4`. |
 | `training/train_yolo.py` | Podział train/val i trening YOLOv8n-seg na CPU. |
 | `check/` | Testy: przyciski (`hello_przyciski.py`), ekran (`hello_screen.py`), algorytm na wideo (`test.py`), instalatory udev OAK-D i przycisku zasilania. |
-| `start_live.sh`, `install_autostart.sh`, `pigweight-live.service` | Autostart na Raspberry Pi. |
+| `start_live.sh`, `install_autostart.sh` | Autostart na Raspberry Pi i pętla restartu `live.py`. |
 | `PLAN.md` | Notatka projektowa z przejścia Otsu → YOLO (częściowo nieaktualna). |
 
 ## 4. Algorytm pomiaru (`detector.py`)
@@ -170,9 +170,9 @@ Przycisk zasilania (jeśli nadal podłączony) idzie do złącza **PWR (J2)** Pi
 
 - **Błąd w klatce** (YOLO, pomiar, rysowanie): `safe_update()` łapie wyjątek, przerywa ważenie (pasek: „brak pomiaru”), program działa dalej. Traceback w logu, najwyżej raz na 10 s.
 - **Błąd kamery / pipeline** (odłączona OAK-D, brak urządzenia, zatrzymany pipeline): `main()` loguje traceback, pokazuje na monitorze „BLAD … restart za N s” i po 5 s startuje kamerę od nowa w tym samym procesie.
-- **Śmierć procesu**: systemd `Restart=always`, `RestartSec=5`, `StartLimitIntervalSec=0` (bez limitu). Opóźnienie 20 s i czekanie na USB w `start_live.sh` tylko tuż po boocie (uptime < 3 min).
+- **Śmierć procesu** (np. `Segmentation fault` w depthai po awarii OAK-D — Python tego nie przechwyci): `start_live.sh` uruchamia `live.py` w pętli, po 5 s i po pojawieniu się kamery w `lsusb`. Kod 0 (klawisz Q) kończy pętlę. Blokada `flock` pilnuje, żeby działała tylko jedna kopia.
 - `przyciski.py`: wyjątek w obsłudze przycisku jest logowany, kolejne naciśnięcia działają; usługa ma `Restart=always`.
-- Gdzie szukać błędu: `live_autostart.log` (linie `!!! BLAD`), `journalctl -u pigweight-live -b`, `journalctl --user -u przyciski -b`.
+- Gdzie szukać błędu: `live_autostart.log` (linie `!!! BLAD`, `live.py padl`), `journalctl --user -u przyciski -b`.
 
 ### 5.7 Start kamery
 
@@ -224,16 +224,18 @@ Gdyby kiedyś trzeba je było zmienić: `coeff_area = znana_waga / A`, gdzie `A`
 4. Opcjonalnie `./check/install_power_button.sh`.
 5. Uruchomić `./install_autostart.sh` i `bash install_przyciski.sh`, a potem `sudo reboot`.
 
-`install_autostart.sh` instaluje usługę **systemd** `pigweight-live` (z podstawionymi ścieżkami i użytkownikiem, `Restart=always`, `RestartSec=5`, bez limitu restartów) oraz zapasowy wpis `~/.config/autostart/pigweight-live.desktop`.
+`install_autostart.sh` tworzy wpis `~/.config/autostart/pigweight-live.desktop` (start po zalogowaniu do pulpitu, gdzie jest ekran) i usuwa starą usługę systemd `pigweight-live`. Ta usługa nigdy nie startowała: systemd odrzucał ją przez cykl zależności z `graphical.target`.
 
 `start_live.sh` przy każdym starcie:
-1. loguje do `live_autostart.log`,
-2. robi **`git pull --ff-only`** (automatyczna aktualizacja kodu; brak sieci nie blokuje startu),
+1. pilnuje jednej kopii (`flock /tmp/pigweight-live-<uid>.lock`) i loguje do `live_autostart.log`,
+2. czeka do 60 s na DNS (`github.com`) i robi **`git pull --ff-only`** (brak sieci nie blokuje startu); po zmianie `przyciski.py` restartuje usługę przycisków,
 3. wybiera Pythona z `.venv` / `venv` / systemowego,
-4. przy `PIGWEIGHT_BOOT_DELAY=1` i uptime < 3 min czeka 20 s, a następnie do 40×3 s na pojawienie się OAK-D w `lsusb`,
-5. ostrzega o braku reguł udev / modelu i uruchamia `live.py` przez `exec`.
+4. przy `PIGWEIGHT_BOOT_DELAY=1` i uptime < 3 min czeka 20 s,
+5. w pętli: czeka na OAK-D w `lsusb` (do 40×3 s), uruchamia `live.py`, a gdy ten padnie — ponawia po 5 s.
 
-Logi: `tail -f live_autostart.log`, `journalctl -u pigweight-live -f`.
+Całe ciało skryptu jest w funkcji, więc `git pull` podmieniający `start_live.sh` nie psuje działającej kopii (nowa wersja działa od następnego startu).
+
+Logi: `tail -f live_autostart.log`.
 
 ## 9. Założenia i ograniczenia
 
@@ -258,6 +260,12 @@ Logi: `tail -f live_autostart.log`, `journalctl -u pigweight-live -f`.
 ### Nowe przyciski (2026-11-17)
 
 7. Stary przycisk na GPIO 12 (pin 32, Blinka) usunięty. Spust (GPIO17) i włącznik I/O (GPIO27) obsługuje `przyciski.py`, który steruje `live.py` sygnałami. Wcześniejsza wersja uruchamiała przy każdym spuście nowy program pomiaru — przy działającym `live.py` dałoby to konflikt o kamerę OAK-D.
+
+### Awaria z 2026-11-17 (diagnoza przez SSH)
+
+8. Kamera OAK-D zawiesiła się (`X_LINK_ERROR`, „Device … has crashed”, crash dump w `~/.cache/depthai/crashdumps/`), a depthai przy zamykaniu zrobił `Segmentation fault` — cały proces padł. Usługa systemd `pigweight-live` nigdy nie działała (cykl zależności), program startował tylko z autostartu pulpitu bez ponawiania. Naprawione pętlą w `start_live.sh`.
+9. `git pull` przy starcie zawsze zawodził („Could not resolve host: github.com” — sieć jeszcze nie wstała), a lokalnie zmieniony `calibration.json` blokowałby pobranie zmian. Naprawione: czekanie na DNS i `calibration.json` poza gitem.
+10. Zasilanie OK (`vcgencmd get_throttled` = `0x0`, 5,1 V), ale OAK-D była w porcie USB 2.0 (480M). Zalecany niebieski port USB 3.0 i krótki, dobry kabel.
 
 ### Otwarte
 

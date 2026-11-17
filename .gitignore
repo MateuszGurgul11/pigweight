@@ -53,6 +53,10 @@ Thumbs.db
 *.suo
 *.sln
 
+# Kalibracja konkretnego urzadzenia (live.py / kalibracja.py ja nadpisuja).
+# Wartosci startowe: calibration.example.json
+calibration.json
+
 # Logi i sekrety
 *.log
 .env

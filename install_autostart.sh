@@ -1,23 +1,21 @@
 #!/usr/bin/env bash
-# Instaluje autostart live.py po wlaczeniu Raspberry Pi.
+# Instaluje autostart live.py po zalogowaniu do pulpitu Raspberry Pi
+# (~/.config/autostart/pigweight-live.desktop -> start_live.sh).
+#
+# start_live.sh sam pilnuje live.py: po awarii (np. Segmentation fault
+# w depthai po zawieszeniu OAK-D) uruchamia go ponownie po 5 s.
 #
 # Uruchom Z folderu projektu (tam gdzie jest live.py), np.:
 #   cd ~/Desktop/pigweight
-#   chmod +x start_live.sh install_autostart.sh
 #   ./install_autostart.sh
 #   sudo reboot
 #
-# Logi:
-#   tail -f ~/Desktop/pigweight/live_autostart.log
-#   journalctl -u pigweight-live -f
-# Stop:    sudo systemctl stop pigweight-live
-# Disable: sudo systemctl disable pigweight-live
+# Logi:     tail -f ~/Desktop/pigweight/live_autostart.log
+# Stop:     pkill -f start_live.sh; pkill -f 'python.*live.py'
+# Start:    nohup ./start_live.sh >/dev/null 2>&1 &   (z sesji pulpitu)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-SERVICE_NAME="pigweight-live"
-UNIT_SRC="$ROOT/pigweight-live.service"
-UNIT_DST="/etc/systemd/system/${SERVICE_NAME}.service"
 USER_NAME="$(id -un)"
 
 # getent bywa niedostepny (np. macOS) — nie wywalaj skryptu przez set -e
@@ -40,11 +38,6 @@ echo
 if [[ ! -f "$ROOT/live.py" ]]; then
   echo "BLAD: w $ROOT nie ma live.py"
   echo "      Uruchom:  cd ~/Desktop/pigweight && ./install_autostart.sh"
-  echo "      (nie z Podejscie3 — ten folder juz nie istnieje)"
-  exit 1
-fi
-if [[ ! -f "$UNIT_SRC" ]]; then
-  echo "BLAD: brak $UNIT_SRC"
   exit 1
 fi
 if [[ ! -x "$ROOT/.venv/bin/python" && ! -x "$ROOT/venv/bin/python" ]]; then
@@ -57,39 +50,17 @@ fi
 
 chmod +x "$ROOT/start_live.sh" "$ROOT/install_autostart.sh"
 
-# --- 1) systemd ---
-TMP="$(mktemp)"
-sed \
-  -e "s|/REPLACE_ROOT|$ROOT|g" \
-  -e "s|/REPLACE_HOME|$HOME_DIR|g" \
-  "$UNIT_SRC" > "$TMP"
-
-# User= + Group= zaraz po [Service]
-if ! grep -q "^User=" "$TMP"; then
-  if sed --version >/dev/null 2>&1; then
-    # GNU sed (Pi)
-    sed -i "/^\[Service\]/a User=$USER_NAME\nGroup=$USER_NAME" "$TMP"
-  else
-    # BSD sed
-    sed -i '' "/^\[Service\]/a\\
-User=$USER_NAME\\
-Group=$USER_NAME
-" "$TMP"
-  fi
+# --- Stara usluga systemd pigweight-live (nie startowala: cykl zaleznosci
+#     z graphical.target) — usuwamy, zeby nie bylo dwoch sposobow startu ---
+OLD_UNIT="/etc/systemd/system/pigweight-live.service"
+if [[ -e "$OLD_UNIT" ]]; then
+  echo ">>> Usuwam stara usluge systemd pigweight-live"
+  sudo systemctl disable --now pigweight-live 2>/dev/null || true
+  sudo rm -f "$OLD_UNIT"
+  sudo systemctl daemon-reload
 fi
 
-echo ">>> Instaluje usluge systemd: $UNIT_DST"
-echo "--- zawartosc ---"
-cat "$TMP"
-echo "-----------------"
-sudo cp "$TMP" "$UNIT_DST"
-rm -f "$TMP"
-
-sudo systemctl daemon-reload
-sudo systemctl enable "$SERVICE_NAME"
-sudo systemctl stop "$SERVICE_NAME" 2>/dev/null || true
-
-# --- 2) autostart pulpitu (zapas — po zalogowaniu do GUI) ---
+# --- Autostart pulpitu (po zalogowaniu — jest DISPLAY / Wayland) ---
 AUTOSTART_DIR="$HOME_DIR/.config/autostart"
 mkdir -p "$AUTOSTART_DIR"
 DESKTOP_FILE="$AUTOSTART_DIR/pigweight-live.desktop"
@@ -105,17 +76,8 @@ X-GNOME-Autostart-enabled=true
 EOF
 
 echo ">>> Autostart GUI: $DESKTOP_FILE"
-
-echo
-echo "Sprawdzenie enable:"
-systemctl is-enabled "$SERVICE_NAME" || true
 echo
 echo "Przyciski (wlacznik I/O + spust): bash $ROOT/install_przyciski.sh"
 echo
 echo "Gotowe. Zrob:  sudo reboot"
-echo "Po restarcie:"
-echo "  tail -f $ROOT/live_autostart.log"
-echo "  journalctl -u $SERVICE_NAME -b --no-pager"
-echo
-echo "Reczny restart teraz (gdy jest pulpit):"
-echo "  sudo systemctl restart $SERVICE_NAME"
+echo "Po restarcie:  tail -f $ROOT/live_autostart.log"

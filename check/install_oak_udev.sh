@@ -33,7 +33,7 @@ echo
 echo "NASTEPNIE:"
 echo "  1) Odłącz i podłącz kabel OAK-D (albo: sudo reboot)"
 echo "  2) cd do pigweight && source .venv/bin/activate && python live.py"
-echo "  3) sudo systemctl restart pigweight-live   # jesli uzywasz autostartu"
+echo "  3) jesli dziala autostart: start_live.sh sam uruchomi live.py ponownie"
 echo
 echo "Jesli nadal 'Insufficient permissions' — sprawdz:"
 echo "  ls -l $RULES_FILE"
